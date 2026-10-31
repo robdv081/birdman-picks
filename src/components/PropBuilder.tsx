@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { fetchScoreboard, LEAGUES, type Game, type LeagueKey } from '../espn';
+import { fetchScoreboard, LEAGUE_KEYS, LEAGUES, type Game, type LeagueKey } from '../espn';
 import { breakEven, fmtAmerican, fmtPct, type Leg } from '../bets';
 import {
   buildParlay,
@@ -13,7 +13,11 @@ import {
   type Mode,
   type Parlay,
 } from '../propgen';
+import { LINE_LEAGUES, scanGameLines } from '../gamelines';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
+
+// Player props where the book posts them; game lines (moneyline, spread) for college football, which has none.
+const BUILDER_LEAGUES = LEAGUE_KEYS.filter((k) => PROP_LEAGUES.includes(k) || LINE_LEAGUES.includes(k));
 
 interface Props {
   setSlip: (fn: (prev: Leg[]) => Leg[]) => void;
@@ -36,6 +40,7 @@ export default function PropBuilder({ setSlip }: Props) {
   const [added, setAdded] = useState<string | null>(null);
 
   const key = `${league}|${date}`;
+  const lines = LINE_LEAGUES.includes(league);
 
   useEffect(() => {
     const hit = scanCache.get(key);
@@ -54,7 +59,7 @@ export default function PropBuilder({ setSlip }: Props) {
     setProgress('Loading games…');
     try {
       const g = games.length ? games : await fetchScoreboard(league, date);
-      const c = await scanProps(league, g, date, setProgress);
+      const c = await (lines ? scanGameLines : scanProps)(league, g, date, setProgress);
       scanCache.set(key, { games: g, cands: c });
       setGames(g);
       setCands(c);
@@ -104,15 +109,16 @@ export default function PropBuilder({ setSlip }: Props) {
   return (
     <section>
       <div className="pagehead">
-        <h1>Prop Parlay Builder</h1>
+        <h1>Parlay Builder</h1>
       </div>
       <p className="muted lede">
-        Pulls DraftKings player props for every game, checks each player's last 10 games against the line, and builds a parlay
-        from the legs that clear most often relative to their price.
+        {lines
+          ? "College football has no player props, so this builds from DraftKings moneylines and spreads, picking the sides ESPN's FPI model rates higher than the price does."
+          : "Pulls DraftKings player props for every game, checks each player's last 10 games against the line, and builds a parlay from the legs that clear most often relative to their price."}
       </p>
 
       <div className="chips">
-        {PROP_LEAGUES.map((k) => (
+        {BUILDER_LEAGUES.map((k) => (
           <button key={k} className={`chip ${k === league ? 'on' : ''}`} onClick={() => setLeague(k)}>
             {LEAGUES[k].label}
           </button>
@@ -135,7 +141,7 @@ export default function PropBuilder({ setSlip }: Props) {
           {pregame.length} game{pregame.length === 1 ? '' : 's'} not started
         </span>
         <button className="btn primary" onClick={scan} disabled={!!progress || !pregame.length}>
-          {progress ? 'Scanning…' : cands ? 'Rescan props' : 'Scan props'}
+          {progress ? 'Scanning…' : `${cands ? 'Rescan' : 'Scan'} ${lines ? 'games' : 'props'}`}
         </button>
       </div>
 
@@ -172,6 +178,7 @@ export default function PropBuilder({ setSlip }: Props) {
                 ))}
               </div>
             </div>
+            {!lines && (
             <label className="field">
               <span>Games</span>
               <select value={gameId} onChange={(e) => setGameId(e.target.value)}>
@@ -185,11 +192,16 @@ export default function PropBuilder({ setSlip }: Props) {
                   ))}
               </select>
             </label>
-            <p className="muted small">{MODES[mode].hint}.</p>
+            )}
+            <p className="muted small">{lines ? 'One leg per game, since a team’s moneyline and spread win or lose together.' : `${MODES[mode].hint}.`}</p>
           </div>
 
           {cands.length === 0 && (
-            <div className="empty">No priced milestone props yet. DraftKings often posts them closer to game time.</div>
+            <div className="empty">
+              {lines
+                ? 'No games with both DraftKings odds and an ESPN FPI projection yet.'
+                : 'No priced milestone props yet. DraftKings often posts them closer to game time.'}
+            </div>
           )}
           {cands.length > 0 && !parlay && (
             <div className="empty">Not enough legs fit this style. Try another style, fewer legs, or all games.</div>
@@ -208,7 +220,7 @@ export default function PropBuilder({ setSlip }: Props) {
                     <b>{fmtPct(parlay.implied)}</b>
                   </span>
                   <span>
-                    <small>Recent form says</small>
+                    <small>{lines ? 'FPI blend says' : 'Recent form says'}</small>
                     <b className={parlay.est > parlay.implied ? 'pos' : 'neg'}>{fmtPct(parlay.est)}</b>
                   </span>
                 </div>
@@ -239,7 +251,11 @@ export default function PropBuilder({ setSlip }: Props) {
           {topLegs.length > 0 && (
             <div className="card toplegs">
               <b>Best individual legs</b>
-              <p className="muted small">Ranked by how much more often the player has cleared the line than the price implies.</p>
+              <p className="muted small">
+                {lines
+                  ? "Ranked by how much more likely ESPN's FPI makes the side than the price implies."
+                  : 'Ranked by how much more often the player has cleared the line than the price implies.'}
+              </p>
               <ul className="plegs">
                 {topLegs.map((c) => (
                   <LegRow key={c.key} c={c} action={<button className="btn ghost sm" onClick={() => addToSlip([c])}>+ Slip</button>} />
@@ -249,9 +265,11 @@ export default function PropBuilder({ setSlip }: Props) {
           )}
 
           <p className="muted small disclaimer">
-            Hit rates over 10 games are a small sample, not true probabilities, and they don't account for matchups, minutes or
+            {lines
+              ? "FPI is ESPN's power-rating model and is blended half-and-half with the market, which is usually sharper on its own. It doesn't know about injuries or weather after the scan. Parlays carry a large built-in house edge, so treat this as research, not a sure thing."
+              : `Hit rates over 10 games are a small sample, not true probabilities, and they don't account for matchups, minutes or
             lineup news after the scan. Legs from the same game move together. Parlays carry a large built-in house edge, so treat
-            this as research, not a sure thing.
+            this as research, not a sure thing.`}
           </p>
         </>
       )}
@@ -268,13 +286,21 @@ function LegRow({ c, action }: { c: Candidate; action: React.ReactNode }) {
           {c.team} · {c.game.away.abbr} @ {c.game.home.abbr}
           {c.gtd && <span className="inj"> · questionable</span>}
         </small>
-        <span className="hitbar" title={`${c.hits} of last ${c.n} games`}>
-          <i style={{ width: `${(c.hits / c.n) * 100}%` }} />
-        </span>
-        <small>
-          Hit {c.hits}/{c.n} · avg {c.avg.toFixed(1)} · book {fmtPct(breakEven(c.odds))} vs form{' '}
-          <span className={c.edge > 0 ? 'pos' : 'neg'}>{fmtPct(c.est)}</span>
-        </small>
+        {c.kind === 'line' ? (
+          <small>
+            {c.detail} · book {fmtPct(breakEven(c.odds))} vs blend <span className={c.edge > 0 ? 'pos' : 'neg'}>{fmtPct(c.est)}</span>
+          </small>
+        ) : (
+          <>
+            <span className="hitbar" title={`${c.hits} of last ${c.n} games`}>
+              <i style={{ width: `${(c.hits / c.n) * 100}%` }} />
+            </span>
+            <small>
+              Hit {c.hits}/{c.n} · avg {c.avg.toFixed(1)} · book {fmtPct(breakEven(c.odds))} vs form{' '}
+              <span className={c.edge > 0 ? 'pos' : 'neg'}>{fmtPct(c.est)}</span>
+            </small>
+          </>
+        )}
       </div>
       <div className="pside">
         <b>{fmtAmerican(c.odds)}</b>

@@ -30,6 +30,10 @@ export interface Candidate {
   est: number; // hit rate shrunk toward the book
   edge: number;
   gtd: boolean;
+  /** 'line' for game-line legs (see gamelines.ts): `player` holds the pick, `athleteId` the game. */
+  kind?: 'line';
+  side?: 'home' | 'away';
+  detail?: string;
 }
 
 /** Scans every pregame game's milestone props and scores them. */
@@ -192,23 +196,30 @@ export function buildParlay(cands: Candidate[], opts: BuildOptions): Parlay | nu
 }
 
 export function candidateLabel(c: Candidate) {
-  return `${c.player} ${c.target}+ ${c.label}`;
+  return c.kind === 'line' ? c.player : `${c.player} ${c.target}+ ${c.label}`;
 }
 
-/** As a parlay-slip leg: an "N+" milestone grades as over N − 0.5. */
+/** As a parlay-slip leg: an "N+" milestone grades as over N − 0.5; game lines grade as themselves. */
 export function toLeg(c: Candidate): Leg {
-  return {
+  const base = {
     league: c.league,
     eventId: c.game.id,
     matchup: `${c.game.away.abbr} @ ${c.game.home.abbr}`,
     date: c.date,
+    odds: c.odds,
+    selection: candidateLabel(c),
+    status: 'pending' as const,
+  };
+  if (c.kind === 'line') {
+    const market = c.stat as 'ml' | 'spread';
+    return { ...base, market, side: c.side, line: market === 'spread' ? c.target : undefined };
+  }
+  return {
+    ...base,
     market: 'prop',
     player: c.player,
     stat: c.stat,
     side: 'over',
     line: c.target - 0.5,
-    odds: c.odds,
-    selection: candidateLabel(c),
-    status: 'pending',
   };
 }
