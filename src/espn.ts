@@ -167,9 +167,12 @@ export async function fetchInjuries(league: LeagueKey, signal?: AbortSignal): Pr
   if (!res.ok) throw new Error(`ESPN returned ${res.status}`);
   const json = await res.json();
   const out: Record<string, Injury[]> = {};
-  for (const t of json.injuries ?? []) out[String(t.id)] = (t.injuries ?? []).map(parseInjury);
+  for (const t of json.injuries ?? []) out[String(t.id)] = (t.injuries ?? []).filter(isDesignated).map(parseInjury);
   return out;
 }
+
+// ESPN's NFL feed also lists healthy players as "Active" with a news note; those aren't injuries.
+const isDesignated = (i: Json) => !/^active$/i.test(String(i.status ?? i.type?.description ?? ''));
 
 export interface StatRow {
   id: string;
@@ -241,7 +244,7 @@ export async function fetchSummary(league: LeagueKey, eventId: string, signal?: 
       })),
   }));
   const injuries: Record<string, Injury[]> = {};
-  for (const t of j.injuries ?? []) injuries[String(t.team?.id)] = (t.injuries ?? []).map(parseInjury);
+  for (const t of j.injuries ?? []) injuries[String(t.team?.id)] = (t.injuries ?? []).filter(isDesignated).map(parseInjury);
   return { box, leaders, injuries };
 }
 

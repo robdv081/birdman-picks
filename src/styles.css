@@ -401,3 +401,27 @@ table.optpool td input { width: auto; }
   .scrim { place-items: end center; padding: 0; }
   .modal { border-radius: 16px 16px 0 0; max-height: 92vh; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
 }
+
+/* Lineup generator */
+.generator { padding: 14px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+.generator > * { flex-shrink: 0; }
+.generator p { margin: 0; }
+.generator .field.grow { flex: 1; min-width: 0; }
+.genopts { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: end; padding-top: 6px; border-top: 1px solid var(--line); }
+.genrules { display: flex; flex-direction: column; gap: 6px; }
+.genrules .check { font-size: 13px; }
+.genresults { display: flex; flex-direction: column; gap: 10px; }
+.genlist { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 10px; }
+.genlineup { padding: 12px 14px; }
+.genlineup h3 { margin: 0; font-family: Anton, Impact, sans-serif; font-weight: 400; font-size: 26px; }
+.genlineup .slots td { font-size: 13px; }
+.genlineup .actions { padding-top: 8px; }
+.exposure { max-width: 480px; }
+.poolhead { padding-top: 8px; border-top: 1px solid var(--line); }
+.search { width: min(240px, 100%); }
+@media (max-width: 640px) {
+  /* Read-only lineups (generator, optimizer results) stay as compact rows; only the editor stacks. */
+  .slots.ro tbody tr { display: table-row; }
+  .slots.ro td { padding: 6px 3px; }
+  .slots.ro td:nth-child(1) { width: 40px; }
+}

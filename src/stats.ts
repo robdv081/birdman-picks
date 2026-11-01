@@ -80,6 +80,9 @@ export function sameName(a: string, b: string) {
   const x = normName(a);
   const y = normName(b);
   if (x === y) return true;
+  // German umlauts: "Stützle" (accents stripped above), "Stuetzle" and "Stutzle" all fold to the same name.
+  const fold = (s: string) => s.replace(/([aou])e/g, '$1');
+  if (fold(x) === fold(y)) return true;
   const [xf, ...xr] = x.split(' ');
   const [yf, ...yr] = y.split(' ');
   if (xr.join(' ') !== yr.join(' ') || !xr.length) return false;

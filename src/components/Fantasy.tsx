@@ -4,7 +4,7 @@ import { fetchScoreboard, fetchSummary, LEAGUE_KEYS, LEAGUES } from '../espn';
 import { canScore, fantasyPoints } from '../stats';
 import { emptySlots, templateFor, TEMPLATES, totals, type Lineup, type Slot } from '../fantasy';
 import { fmtDate, todayYMD } from '../store';
-import Optimizer from './Optimizer';
+import Generator from './Generator';
 
 interface Props {
   lineups: Lineup[];
@@ -55,7 +55,7 @@ export default function Fantasy({ lineups, setLineups }: Props) {
         </div>
       </div>
 
-      <Optimizer
+      <Generator
         onSave={(l) => {
           setLineups((prev) => [l, ...prev]);
           setOpenId(l.id);

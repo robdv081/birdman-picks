@@ -67,6 +67,11 @@ const TOTALS: Partial<Record<LeagueKey, Record<string, string>>> = {
     'Total 3-Point Field Goals': '3pm',
     'Total Steals': 'stl',
   },
+  nhl: {
+    'Total Shots on Goal': 'sog',
+    'Total Points': 'pts',
+    'Total Assists': 'a',
+  },
 };
 
 export async function fetchPropBets(league: LeagueKey, eventId: string): Promise<Json[]> {
