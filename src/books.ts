@@ -94,7 +94,8 @@ export async function dkTarget(s: Selection): Promise<DkTarget> {
 
 /**
  * One DraftKings link carrying every exact pick, for adding a whole parlay to the bet slip in one tap.
- * DraftKings' own shared bet slips list several outcome ids in one `outcomes` value joined with "+".
+ * DraftKings' own shared bet slips list several outcome ids in one `outcomes` value joined with "+";
+ * confirmed on a phone (Nov 2026) to put every leg on the slip.
  * Returns null with fewer than two exact picks (a single pick already has its own link).
  */
 export function dkSlipUrl(targets: DkTarget[]): string | null {

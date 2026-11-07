@@ -61,9 +61,8 @@ export default function SendToBook({ picks, title }: Props) {
                     Add all {exactCount} picks to slip
                   </a>
                   <p className="muted small">
-                    One tap sends every pick to your DraftKings bet slip.
-                    {exactCount < picks.length ? ` The other ${picks.length - exactCount} can't go straight to the slip; add them from the list below.` : ''} If
-                    only one shows up, use the buttons below to add the rest.
+                    One tap puts every pick on your DraftKings bet slip.
+                    {exactCount < picks.length ? ` The other ${picks.length - exactCount} can't go straight to the slip; add them from the list below.` : ''}
                   </p>
                 </div>
               )}
