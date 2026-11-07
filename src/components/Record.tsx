@@ -12,6 +12,7 @@ import {
   type RecordSummary,
 } from '../server';
 import { fmtDate } from '../store';
+import ProAlerts, { FollowButton } from './ProAlerts';
 
 type Filter = 'all' | 'pending' | 'settled';
 
@@ -129,6 +130,8 @@ export default function Record() {
             </p>
           </div>
 
+          <ProAlerts />
+
           <div className="row between recordbar">
             <div className="seg">
               {(['all', 'pending', 'settled'] as Filter[]).map((f) => (
@@ -186,6 +189,7 @@ function PickCard({ p }: { p: RecordPick }) {
           </span>
         )}
         <span className="spacer" />
+        {p.status === 'pending' && p.startAt > Date.now() && <FollowButton pickId={p.id} />}
         <small className="muted" title={new Date(p.createdAt).toISOString()}>
           Locked {when(p.createdAt)} · {lead(p.startAt - p.createdAt)} before start
         </small>

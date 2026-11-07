@@ -27,6 +27,9 @@ export interface Env {
   /** Lets the pick agent post picks; they're marked as the model's. */
   AGENT_KEY?: string;
   SCOUT_PUBLISH_KEY?: string;
+  /** Web push (VAPID) key pair: the public key as base64url, the private key as a JWK. */
+  VAPID_PUBLIC_KEY?: string;
+  VAPID_PRIVATE_JWK?: string;
   STRIPE_SECRET_KEY?: string;
   TOKEN_SECRET?: string;
   RESEND_API_KEY?: string;
@@ -54,9 +57,9 @@ export function json(data: unknown, status = 200, extra: Record<string, string> 
   });
 }
 
-export async function readJson(request: Request): Promise<Record<string, unknown>> {
+export async function readJson(request: Request, max = 8192): Promise<Record<string, unknown>> {
   const text = await request.text();
-  if (text.length > 8192) throw new HttpError(413, 'Too much data.');
+  if (text.length > max) throw new HttpError(413, 'Too much data.');
   try {
     const data = JSON.parse(text || '{}');
     return data && typeof data === 'object' && !Array.isArray(data) ? data : {};

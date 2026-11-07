@@ -1,7 +1,14 @@
 import { useState, type ReactNode } from 'react';
 import { dismissThanks, manageBilling, restoreStart, restoreVerify, upgrade, usePro } from '../pro';
 
-const PERKS = ['Prop parlay builder', 'Fantasy lineup generator', 'Best edges of the day', 'Full report card on your bets'];
+const PERKS = [
+  'Scout research + up to 3 Analyst picks a day, with sources',
+  'Phone alerts for new picks and line moves',
+  'Prop parlay builder',
+  'Fantasy lineup generator',
+  'Best edges of the day',
+  'Full report card on your bets',
+];
 
 /** Shows its children to Pro members; everyone else sees what the feature does and how to unlock it. */
 export function ProGate({ feature, blurb, children }: { feature: string; blurb: string; children: ReactNode }) {

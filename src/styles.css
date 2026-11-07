@@ -615,3 +615,18 @@ b.warnc { color: var(--gold); }
 .restore { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .restore input { flex: 1 1 180px; }
 .pill.model { margin-left: 6px; background: color-mix(in srgb, var(--gold) 22%, transparent); color: var(--ink); font-size: 10px; padding: 1px 6px; }
+
+/* Scout + Analyst, Pro alerts */
+.scout h2 { margin: 18px 0 8px; font-size: 18px; }
+.scoutgames { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.scoutgames .card { padding: 12px 14px; }
+.scoutgames .card p { margin: 4px 0; }
+.scout details.card { padding: 10px 14px; }
+.scout .card.warn, .scout .card.empty { padding: 14px; text-align: left; }
+.analyst { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; padding: 14px; }
+.analyst .stats { grid-template-columns: repeat(3, 1fr); }
+.analyst .stat b { font-size: 20px; }
+.analyst ul { margin: 0; padding-left: 18px; }
+.analyst p { margin: 2px 0; }
+.proalerts { display: flex; flex-direction: column; gap: 6px; margin: 10px 0; padding: 12px 14px; border-color: var(--gold); }
+.proalerts p { margin: 0; }

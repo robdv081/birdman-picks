@@ -21,7 +21,8 @@ import RedZoneBar from './components/RedZoneBar';
 import { useRedZone } from './redzone';
 import { HELPLINE } from './guard';
 import { ProGate, ProNotice } from './components/Pro';
-import { startPro } from './pro';
+import { startPro, usePro } from './pro';
+import { refreshPush } from './push';
 import { scoutEnabled } from './server';
 
 type Route = { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
@@ -119,6 +120,11 @@ export default function App() {
   useCloseCapture(bets, setBets);
   const liveFootball = useRedZone(bets);
   useEffect(startPro, []);
+  const pro = usePro();
+  // Pro alerts: re-confirm the phone's subscription once Pro is confirmed (the server re-checks Pro too).
+  useEffect(() => {
+    if (pro.pro && pro.checked && pro.enabled) void refreshPush();
+  }, [pro.pro, pro.checked, pro.enabled]);
   const [scoutOn, setScoutOn] = useState(false);
   useEffect(() => {
     scoutEnabled().then(setScoutOn);

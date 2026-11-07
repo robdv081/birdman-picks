@@ -178,5 +178,7 @@ export async function requirePro(request: Request, env: Env) {
   needStripe(env);
   const customer = await customerFromToken(env, bearer(request));
   if (!customer) throw new HttpError(401, 'Sign in to Pro first.');
-  if (!(await customerIsPro(env, customer)).active) throw new HttpError(403, 'An active Pro subscription is required.');
+  const pro = await customerIsPro(env, customer);
+  if (!pro.active) throw new HttpError(403, 'An active Pro subscription is required.');
+  return { customer, renews: pro.renews };
 }

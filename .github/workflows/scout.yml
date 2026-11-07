@@ -1,0 +1,35 @@
+# Birdman Scout + Analyst: researches today's slate and publishes it for Pro members every 30 minutes,
+# 10 AM to midnight Eastern. Also sends current prices for pending record picks, for line-move alerts.
+# Needs the SERVER_URL variable and the SCOUT_PUBLISH_KEY secret.
+name: Scout
+
+on:
+  schedule:
+    - cron: '7,37 15-23 * * *'
+    - cron: '7,37 0-4 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry run (show the report, publish nothing)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: scout
+  cancel-in-progress: false
+
+jobs:
+  scout:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/run-scout.mjs ${{ inputs.dry && '--dry' || '' }}
+        env:
+          SERVER_URL: ${{ vars.SERVER_URL }}
+          SCOUT_PUBLISH_KEY: ${{ secrets.SCOUT_PUBLISH_KEY }}

@@ -6,6 +6,7 @@ import { getRecord, isAdmin, postPick, settleRecord } from './record';
 import { createPool, getPool, joinPool, savePoolPick, settlePools } from './pickem';
 import * as pro from './pro';
 import { getResearch, publishResearch, scoutEnabled } from './scout';
+import * as push from './push';
 import { HttpError, json, type Deps, type Env } from './util';
 
 export const liveDeps: Deps = {
@@ -50,6 +51,13 @@ export async function route(request: Request, env: Env, deps: Deps): Promise<Res
   if (m === 'GET' && path === '/api/pro/scout') return getResearch(request, env, deps);
   if (m === 'POST' && path === '/api/scout/research') return publishResearch(request, env, deps);
 
+  if (m === 'GET' && path === '/api/push/key') return push.pushKey(env);
+  if (m === 'POST' && path === '/api/push/subscribe') return push.subscribe(request, env, deps);
+  if (m === 'POST' && path === '/api/push/unsubscribe') return push.unsubscribe(request, env);
+  if (m === 'POST' && path === '/api/push/follow') return push.follow(request, env, deps);
+  if (m === 'POST' && path === '/api/push/pull') return push.pull(request, env, deps);
+  if (m === 'POST' && path === '/api/push/moves') return push.moves(request, env, deps);
+
   if (m === 'POST' && path === '/api/pro/claim') return pro.claim(request, env);
   if (m === 'GET' && path === '/api/pro/status') return pro.status(request, env);
   if (m === 'POST' && path === '/api/pro/portal') return pro.portal(request, env);
@@ -83,7 +91,9 @@ export async function handle(request: Request, env: Env, deps: Deps): Promise<Re
 
 export async function settleAll(env: Env, deps: Deps) {
   const [record, pools] = await Promise.all([settleRecord(env, deps), settlePools(env, deps)]);
-  return { record, pools };
+  // Alerts never get in the way of grading.
+  const alerts = await push.sendPushes(env, deps).catch((e) => ({ error: String(e) }));
+  return { record, pools, alerts };
 }
 
 export default {
@@ -96,4 +106,5 @@ export default {
 // For tests and anyone checking the record by hand.
 export { GENESIS, lockedFields, pickHash } from '../src/recordhash';
 
-export { research, breakEven, refreshResearch } from './scout';
+export { assemble } from './scout';
+export { sendPushes } from './push';

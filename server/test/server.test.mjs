@@ -337,90 +337,177 @@ test('Pro: restore by emailed code, rate limited, codes burn out', async () => {
   assert.equal((await call('POST', '/api/pro/restore/verify', { email: 'fan@example.com', code: code3 })).status, 400);
 });
 
-// ---------- Scout v2 / Analyst v1 ----------
-const researchMarket = (over = {}) => ({
-  league: 'nfl', eventId: '401', start: '2026-11-08T18:00:00Z', market: 'Kansas City +2.5',
-  odds: -110, bookmaker: 'Example book', availabilityConfirmed: true,
-  counterarguments: 'Road travel and a changed offensive line can reduce the estimate.',
-  passIf: 'Pass if the quarterback is unavailable or the price moves.',
-  evidence: [
-    {kind:'official', url:'https://www.nfl.com/injuries/', checkedAt:new Date(T0).toISOString(), note:'Official availability checked.'},
-    {kind:'bookmaker', url:'https://example.com/markets/401', checkedAt:new Date(T0).toISOString(), note:'Book price observed.'}
-  ],
-  estimate: {probability:0.58, method:'Independent example model trained on pregame team statistics.', validation:'Example held-out calibration assessment with recorded sample size.', source:'https://example.com/model-validation'},
-  ...over
+// ---------- Scout + Birdman Analyst ----------
+const iso = (ms) => new Date(ms).toISOString();
+const SCOUT = { Authorization: 'Bearer test-scout-key-0123' };
+const ev = (kind, over = {}) => ({ kind, url: 'https://www.espn.com/nfl/game/_/gameId/401', checkedAt: iso(T0 - 5 * 60_000), note: kind + ' checked', ...over });
+const analystPick = (over = {}) => ({
+  league: 'nfl', eventId: '401', start: '2026-11-08T18:00:00Z', event: 'Kansas City Chiefs at Buffalo Bills',
+  market: 'KC +2.5', odds: -110, bookmaker: 'DraftKings', probability: 0.58,
+  method: 'ESPN FPI projection blended with the DraftKings price.',
+  availability: 'Checked against ESPN’s injury report.',
+  evidence: [ev('schedule'), ev('odds', { url: 'https://sportsbook.draftkings.com/event/401' }), ev('injuries', { url: 'https://www.espn.com/nfl/injuries' })],
+  counterarguments: ['The market disagrees.'], passIf: ['Pass if the price is worse than -125.'], onRecord: false,
+  breakEven: 0.01, edge: 0.9, // ignored: the server recomputes both
+  ...over,
 });
-test('Scout accepts a documented future market; Analyst computes break-even and flat units', async () => {
-  const r = await W.research(env, deps, [researchMarket()]);
-  assert.equal(r.candidates.length, 1);
-  assert.equal(r.candidates[0].units, 1);
-  assert.ok(Math.abs(r.candidates[0].breakEven - 110/210) < 1e-9);
-  assert.equal(r.feeds.length, 1, 'only the leagues being researched are downloaded');
+const submission = (over = {}) => ({
+  checkedAt: iso(T0 - 5 * 60_000),
+  feeds: [{ league: 'nfl', checkedAt: iso(T0 - 5 * 60_000), ok: true, events: 2, injuries: true }],
+  games: [{ league: 'nfl', eventId: '401', start: '2026-11-08T18:00:00Z', matchup: 'KC @ BUF', url: 'https://www.espn.com/nfl/game/_/gameId/401', odds: 'DraftKings: KC +120 / BUF -140', moved: 'BUF spread opened -2, now -2.5', injuries: [{ team: 'KC', player: 'A Player', status: 'Out' }] }],
+  candidates: [analystPick()],
+  passes: [],
+  ...over,
 });
-test('Scout rejects stale, future-dated, forged official and missing-price evidence', async () => {
-  for (const bad of [
-    researchMarket({odds:99}),
-    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,checkedAt:new Date(T0-31*60000).toISOString()}))}),
-    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,checkedAt:new Date(T0+1).toISOString()}))}),
-    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,url:'https://nfl.com.evil.example/fake'}))}),
-    researchMarket({availabilityConfirmed:false}), researchMarket({estimate:undefined})
-  ]) assert.equal((await W.research(env,deps,[bad])).candidates.length,0);
+const publish = (body) => call('POST', '/api/scout/research', body, SCOUT);
+
+test('Scout publishes with its own key only; the server recomputes break-even and edge', async () => {
+  assert.equal((await publish(submission())).status, 401, 'no publisher connected');
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  assert.equal((await call('POST', '/api/scout/research', submission(), owner)).status, 401, 'the owner key is not the publisher key');
+  const r = await publish(submission());
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.report.status, 'paper_candidates');
+  const row = JSON.parse(env.DB.raw.prepare('SELECT report FROM scout_reports').get().report);
+  assert.ok(Math.abs(row.candidates[0].breakEven - 110 / 210) < 1e-9);
+  assert.ok(Math.abs(row.candidates[0].edge - (0.58 - 110 / 210)) < 1e-9);
+  assert.equal(row.games[0].injuries[0].player, 'A Player');
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM picks').get().n, 0, 'research never touches the record');
 });
-test('Scout rejects changed starts and in-progress events', async () => {
-  assert.equal((await W.research(env,deps,[researchMarket({start:'2026-11-08T18:01:00Z'})])).candidates.length,0);
-  games['nfl|2026-11-08'][0].state='in';
-  assert.equal((await W.research(env,deps,[researchMarket()])).candidates.length,0);
+
+test('Analyst passes picks with missing, stale or outside sources, started games and out-of-range edges', async () => {
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  const bad = [
+    analystPick({ eventId: '402', evidence: [ev('schedule'), ev('odds', { url: 'https://example.com/odds' }), ev('injuries')] }),
+    analystPick({ eventId: '402', evidence: [ev('schedule'), ev('odds'), ev('injuries', { checkedAt: iso(T0 - 40 * 60_000) })] }),
+    analystPick({ eventId: '402', evidence: [ev('schedule'), ev('injuries')] }),
+    analystPick({ eventId: '402', start: iso(T0 + 5 * 60_000) }),
+    analystPick({ eventId: '402', probability: 0.75 }),
+    analystPick({ eventId: '402', probability: 0.53 }),
+    analystPick({ eventId: '402', odds: 99 }),
+    analystPick({ eventId: '402', counterarguments: [] }),
+  ];
+  const r = await publish(submission({ candidates: bad }));
+  assert.equal(r.status, 201);
+  assert.equal(r.body.report.candidates, 0);
+  assert.equal(r.body.report.status, 'no_verified_picks');
+  assert.equal(r.body.report.passes.length, bad.length);
+  const many = await publish(submission({ candidates: [analystPick(), analystPick(), analystPick({ eventId: '402' }), analystPick({ eventId: '403' }), analystPick({ eventId: '404' })] }));
+  assert.equal(many.body.report.candidates, 3, 'three at most, one per game');
+  assert.equal((await publish(submission({ checkedAt: iso(T0 - 25 * 60_000) }))).status, 400, 'old research is refused');
+  assert.equal((await publish(submission({ checkedAt: iso(T0 + 5 * 60_000) }))).status, 400, 'future research is refused');
 });
-test('Analyst selects at most one candidate per event and passes missing estimates', async () => {
-  const r=await W.research(env,deps,[researchMarket(),researchMarket(),researchMarket({estimate:undefined})]);
-  assert.equal(r.candidates.length,1);
-  assert.equal(r.passes.length,2);
+
+test('Pro members read the latest report; it hides picks near the start and when out of date', async () => {
+  const { subs } = fakeStripe();
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  assert.equal((await call('GET', '/api/pro/scout')).status, 401);
+  await publish(submission());
+  const c = await call('POST', '/api/pro/claim', { session_id: 'cs_test_paidsession123' });
+  const auth = { Authorization: 'Bearer ' + c.body.token };
+  const r = await call('GET', '/api/pro/scout', null, auth);
+  assert.equal(r.body.report.candidates.length, 1);
+  assert.equal(r.body.report.games.length, 1);
+  assert.equal(r.headers.get('Cache-Control'), 'no-store');
+  clock = Date.parse('2026-11-08T17:55:00Z');
+  const late = await call('GET', '/api/pro/scout', null, auth);
+  assert.equal(late.body.expired, true);
+  assert.equal(late.body.report.candidates.length, 0);
+  clock = Date.parse('2026-11-08T17:00:00Z');
+  await publish(submission({ checkedAt: iso(clock - 60_000), candidates: [analystPick({ evidence: [ev('schedule', { checkedAt: iso(clock - 60_000) }), ev('odds', { checkedAt: iso(clock - 60_000) }), ev('stats', { checkedAt: iso(clock - 60_000) })] })] }));
+  clock = Date.parse('2026-11-08T17:45:00Z');
+  assert.equal((await call('GET', '/api/pro/scout', null, auth)).body.report.candidates.length, 1, 'fresh report, 15 minutes out');
+  clock = Date.parse('2026-11-08T17:52:00Z');
+  const near = await call('GET', '/api/pro/scout', null, auth);
+  assert.equal(near.body.expired, false);
+  assert.equal(near.body.report.candidates.length, 0, 'within 10 minutes of the start');
+  subs.cus_A = [{ status: 'canceled' }];
+  assert.equal((await call('GET', '/api/pro/scout', null, auth)).status, 403);
 });
-test('Feed failure stays stale and does not become an empty successful check', async () => {
-  deps.games=async()=>{throw Error('offline')};
-  const r=await W.research(env,deps,[researchMarket()]);
-  assert.equal(r.candidates.length,0);assert.ok(r.feeds.every(f=>f.stale));
-});
-test('Research publisher requires a separate key; reports append without touching the record', async () => {
-  assert.equal((await call('POST','/api/scout/research',{markets:[]},owner)).status,401);
-  env.SCOUT_PUBLISH_KEY='test-scout-key';
-  const headers={Authorization:'Bearer test-scout-key'};
-  assert.equal((await call('POST','/api/scout/research',{markets:[researchMarket()]},headers)).status,201);
-  assert.equal((await call('POST','/api/scout/research',{markets:[]},headers)).status,201);
-  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,2);
-  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM picks').get().n,0);
-});
-test('An empty report downloads no schedules; the app can see whether a publisher is connected', async () => {
-  let calls = 0; const real = deps.games; deps.games = async (...a) => (calls++, real(...a));
-  const r = await W.research(env, deps, []);
-  assert.equal(calls, 0); assert.equal(r.feeds.length, 0); assert.equal(r.status, 'no_verified_picks');
-  delete env.SCOUT_PUBLISH_KEY;
+
+test('the app can see whether Scout is connected', async () => {
   assert.equal((await call('GET', '/api/scout/enabled')).body.enabled, false);
-  env.SCOUT_PUBLISH_KEY = 'test-scout-key';
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
   assert.equal((await call('GET', '/api/scout/enabled')).body.enabled, true);
 });
-test('Pro research fails closed with no membership; cron preserves a fresh published report', async () => {
-  env.STRIPE_SECRET_KEY='test';env.TOKEN_SECRET='test-token-secret';
-  assert.equal((await call('GET','/api/pro/scout')).status,401);
-  env.SCOUT_PUBLISH_KEY='test-scout-key';
-  await call('POST','/api/scout/research',{markets:[]},{Authorization:'Bearer test-scout-key'});
-  await W.refreshResearch(env,deps);
-  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,1);
-  clock+=31*60000;await W.refreshResearch(env,deps);
-  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,2);
+
+// ---------- Pro alerts ----------
+const b64u = (buf) => Buffer.from(buf).toString('base64url');
+async function vapid() {
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  env.VAPID_PUBLIC_KEY = b64u(await crypto.subtle.exportKey('raw', kp.publicKey));
+  env.VAPID_PRIVATE_JWK = JSON.stringify(await crypto.subtle.exportKey('jwk', kp.privateKey));
+  env.APP_URL = 'https://robdv081.github.io/birdman-picks/';
+  return kp.publicKey;
+}
+const SUB = { endpoint: 'https://fcm.googleapis.com/fcm/send/abc123', auth: 'c2VjcmV0LWF1dGgtMTIzNA' };
+async function proMember() {
+  const stripe = fakeStripe();
+  const c = await call('POST', '/api/pro/claim', { session_id: 'cs_test_paidsession123' });
+  return { ...stripe, auth: { Authorization: 'Bearer ' + c.body.token } };
+}
+
+test('alerts: only Pro members on a known push service can subscribe; the phone proves itself to collect', async () => {
+  const { auth, subs } = await proMember();
+  assert.equal((await call('POST', '/api/push/subscribe', SUB, auth)).status, 503, 'needs keys on the server');
+  await vapid();
+  assert.equal((await call('GET', '/api/push/key')).body.key, env.VAPID_PUBLIC_KEY);
+  assert.equal((await call('POST', '/api/push/subscribe', SUB)).status, 401);
+  assert.equal((await call('POST', '/api/push/subscribe', { ...SUB, endpoint: 'https://evil.example/push' }, auth)).status, 400);
+  assert.equal((await call('POST', '/api/push/subscribe', SUB, auth)).status, 200);
+  assert.equal((await call('POST', '/api/push/pull', { ...SUB, auth: 'wrong-secret-wrong-secret' })).status, 404);
+  assert.deepEqual((await call('POST', '/api/push/pull', SUB)).body.messages, []);
+  subs.cus_A = [{ status: 'canceled' }];
+  assert.equal((await call('POST', '/api/push/subscribe', SUB, auth)).status, 403, 'lapsed members cannot re-subscribe');
 });
-test('Pro report access rechecks subscription, schedule and report age', async () => {
-  const {subs}=fakeStripe();
-  env.SCOUT_PUBLISH_KEY='test-scout-key';
-  await call('POST','/api/scout/research',{markets:[researchMarket()]},{Authorization:'Bearer test-scout-key'});
-  const c=await call('POST','/api/pro/claim',{session_id:'cs_test_paidsession123'});
-  const auth={Authorization:'Bearer '+c.body.token};
-  assert.equal((await call('GET','/api/pro/scout',null,auth)).body.report.candidates.length,1);
-  games['nfl|2026-11-08'][0].state='in';
-  assert.equal((await call('GET','/api/pro/scout',null,auth)).body.report.candidates.length,0);
-  games['nfl|2026-11-08'][0].state='pre';clock+=31*60000;
-  const old=await call('GET','/api/pro/scout',null,auth);
-  assert.equal(old.body.expired,true);assert.equal(old.body.report.candidates.length,0);
-  subs.cus_A=[{status:'canceled'}];
-  assert.equal((await call('GET','/api/pro/scout',null,auth)).status,403);
+
+test('alerts: a new pick wakes subscribed phones with a signed VAPID push, and the message is collected once', async () => {
+  const { auth } = await proMember();
+  const pub = await vapid();
+  await call('POST', '/api/push/subscribe', SUB, auth);
+  await W.sendPushes(env, deps, async () => new Response(null, { status: 201 })); // first run: baseline, no backlog
+  await call('POST', '/api/record/picks', pick(), { Authorization: 'Bearer ' + AGENT });
+  const sent = [];
+  const r = await W.sendPushes(env, deps, async (url, init) => (sent.push({ url, init }), new Response(null, { status: 201 })));
+  assert.equal(r.sent, 1);
+  assert.equal(sent[0].url, SUB.endpoint);
+  assert.equal(sent[0].init.headers['Content-Length'], '0', 'pushes carry no data');
+  const m = sent[0].init.headers.Authorization.match(/^vapid t=([^.]+)\.([^.]+)\.([^,]+), k=(.+)$/);
+  assert.ok(m, sent[0].init.headers.Authorization);
+  assert.equal(JSON.parse(Buffer.from(m[2], 'base64url')).aud, 'https://fcm.googleapis.com');
+  assert.ok(await crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pub, Buffer.from(m[3], 'base64url'), new TextEncoder().encode(`${m[1]}.${m[2]}`)), 'signature checks out');
+  const got = await call('POST', '/api/push/pull', SUB);
+  assert.equal(got.body.messages.length, 1);
+  assert.equal(got.body.messages[0].title, 'New Birdman model pick');
+  assert.match(got.body.messages[0].body, /KC \+2\.5 -110/);
+  assert.equal((await call('POST', '/api/push/pull', SUB)).body.messages.length, 0, 'collected once');
+  assert.equal((await W.sendPushes(env, deps, async () => new Response(null, { status: 201 }))).sent, 0, 'nothing new, no push');
+  // Membership lapses (the app hasn't re-confirmed a renewal): no more alerts.
+  env.DB.raw.prepare('UPDATE push_subs SET pro_until = ?').run(deps.now() - 1);
+  assert.equal((await call('POST', '/api/record/picks', pick({ eventId: '402' }), { Authorization: 'Bearer ' + AGENT })).status, 201);
+  assert.equal((await W.sendPushes(env, deps, async () => new Response(null, { status: 201 }))).sent, 0, 'lapsed: no push');
+});
+
+test('alerts: followers hear about real line moves, in plain words; dead subscriptions are dropped', async () => {
+  const { auth } = await proMember();
+  await vapid();
+  await call('POST', '/api/push/subscribe', { ...SUB, picks: false }, auth);
+  const p = (await call('POST', '/api/record/picks', pick(), owner)).body.pick; // KC +2.5 -110
+  assert.equal((await call('POST', '/api/push/follow', { ...SUB, pickId: p.id })).body.following, true);
+  assert.equal((await call('POST', '/api/push/moves', { moves: [] })).status, 401, 'only the publisher reports prices');
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  const move = (odds, line) => call('POST', '/api/push/moves', { moves: [{ pickId: p.id, odds, line }] }, SCOUT);
+  assert.equal((await move(-112, 2.5)).body.queued, 0, 'a cent or two is not news');
+  assert.equal((await move(-110, 1.5)).body.queued, 1);
+  const msg = (await call('POST', '/api/push/pull', SUB)).body.messages[0];
+  assert.equal(msg.title, 'Line moved: KC +2.5');
+  assert.match(msg.body, /Now \+1\.5 at -110 .*was \+2\.5 at -110.*toward this pick/);
+  assert.equal((await move(-110, 1.5)).body.queued, 0, 'no repeat for the same number');
+  assert.equal((await move(-110, 3)).body.queued, 1);
+  assert.match((await call('POST', '/api/push/pull', SUB)).body.messages[0].body, /away from this pick/);
+  await move(-110, 1.5);
+  const r = await W.sendPushes(env, deps, async () => new Response(null, { status: 410 }));
+  assert.equal(r.gone, 1);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM push_subs').get().n, 0);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM push_follows').get().n, 0);
 });
