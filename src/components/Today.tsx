@@ -4,7 +4,7 @@ import { fmtAmerican, kellyUnits, type Bet, type Leg } from '../bets';
 import { lineMoves, type Move } from '../movement';
 import { gameWeather, passGameFactor, weatherNote, type GameWeather } from '../weather';
 import { candidateLabel, scanProps, toLeg, type Candidate } from '../propgen';
-import { scanGameLines } from '../gamelines';
+import { LINE_LEAGUES, scanGameLines } from '../gamelines';
 import { pool } from '../market';
 import { loadSnapshots } from '../snapshots';
 import { SPORT_LABEL } from '../dfs';
@@ -12,7 +12,7 @@ import { fmtDate, shiftYMD, todayYMD } from '../store';
 import LiveSweat from './LiveSweat';
 import AlertsToggle from './AlertsToggle';
 
-const MOVE_LEAGUES: LeagueKey[] = ['nfl', 'cfb', 'nba', 'nhl', 'mlb'];
+const MOVE_LEAGUES: LeagueKey[] = ['nfl', 'cfb', 'nba', 'mcbb', 'nhl', 'mlb'];
 const time = (iso: string) => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 
 export default function Today({ bets, setSlip }: { bets: Bet[]; setSlip: (fn: (prev: Leg[]) => Leg[]) => void }) {
@@ -122,8 +122,10 @@ function BestEdges({ games, setSlip }: { games: Game[] | null; setSlip: (fn: (pr
       const list = games.filter((g) => g.league === lg && g.state === 'pre');
       if (list.length) all.push(...(await scanProps(lg, list, today, (m) => setProgress(`${LEAGUES[lg].label}: ${m}`)).catch(() => [])));
     }
-    const cfb = games.filter((g) => g.league === 'cfb' && g.state === 'pre');
-    if (cfb.length) all.push(...(await scanGameLines('cfb', cfb, today, (m) => setProgress(`College football: ${m}`)).catch(() => [])));
+    for (const lg of LINE_LEAGUES) {
+      const list = games.filter((g) => g.league === lg && g.state === 'pre');
+      if (list.length) all.push(...(await scanGameLines(lg, list, today, (m) => setProgress(`${LEAGUES[lg].label}: ${m}`)).catch(() => [])));
+    }
     // Edges with a real price: skip heavy favorites and lottery tickets.
     setEdges(all.filter((c) => c.odds >= -250 && c.odds <= 400 && c.edge > 0).sort((a, b) => b.edge - a.edge).slice(0, 8));
     setProgress(null);
@@ -138,7 +140,7 @@ function BestEdges({ games, setSlip }: { games: Game[] | null; setSlip: (fn: (pr
         </button>
       </div>
       <p className="muted small">
-        NBA and NHL player props (recent form vs. the price) and college football sides (ESPN's FPI vs. the price), ranked by edge,
+        NBA and NHL player props (recent form vs. the price) and college football and basketball sides (ESPN's FPI and BPI vs. the price), ranked by edge,
         with a cautious Kelly stake.
       </p>
       {progress && <p className="muted small">{progress}</p>}

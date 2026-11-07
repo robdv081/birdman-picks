@@ -13,10 +13,10 @@ import {
   type Mode,
   type Parlay,
 } from '../propgen';
-import { LINE_LEAGUES, scanGameLines } from '../gamelines';
+import { LINE_LEAGUES, MODEL_NAME, scanGameLines } from '../gamelines';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
 
-// Player props where the book posts them; game lines (moneyline, spread) for college football, which has none.
+// Player props where the book posts them; game lines (moneyline, spread) for college sports, which have none.
 const BUILDER_LEAGUES = LEAGUE_KEYS.filter((k) => PROP_LEAGUES.includes(k) || LINE_LEAGUES.includes(k));
 
 interface Props {
@@ -41,6 +41,7 @@ export default function PropBuilder({ setSlip }: Props) {
 
   const key = `${league}|${date}`;
   const lines = LINE_LEAGUES.includes(league);
+  const model = MODEL_NAME[league] ?? 'model';
 
   useEffect(() => {
     const hit = scanCache.get(key);
@@ -113,7 +114,7 @@ export default function PropBuilder({ setSlip }: Props) {
       </div>
       <p className="muted lede">
         {lines
-          ? "College football has no player props, so this builds from DraftKings moneylines and spreads, picking the sides ESPN's FPI model rates higher than the price does."
+          ? `${LEAGUES[league].label} has no player props, so this builds from DraftKings moneylines and spreads, picking the sides ESPN's ${model} model rates higher than the price does.`
           : "Pulls DraftKings player props for every game, checks each player's last 10 games against the line, and builds a parlay from the legs that clear most often relative to their price."}
       </p>
 
@@ -199,7 +200,7 @@ export default function PropBuilder({ setSlip }: Props) {
           {cands.length === 0 && (
             <div className="empty">
               {lines
-                ? 'No games with both DraftKings odds and an ESPN FPI projection yet.'
+                ? `No games with both DraftKings odds and an ESPN ${model} projection yet.`
                 : 'No priced milestone props yet. DraftKings often posts them closer to game time.'}
             </div>
           )}
@@ -220,7 +221,7 @@ export default function PropBuilder({ setSlip }: Props) {
                     <b>{fmtPct(parlay.implied)}</b>
                   </span>
                   <span>
-                    <small>{lines ? 'FPI blend says' : 'Recent form says'}</small>
+                    <small>{lines ? `${model} blend says` : 'Recent form says'}</small>
                     <b className={parlay.est > parlay.implied ? 'pos' : 'neg'}>{fmtPct(parlay.est)}</b>
                   </span>
                 </div>
@@ -254,7 +255,7 @@ export default function PropBuilder({ setSlip }: Props) {
               <b>Best individual legs</b>
               <p className="muted small">
                 {lines
-                  ? "Ranked by how much more likely ESPN's FPI makes the side than the price implies."
+                  ? `Ranked by how much more likely ESPN's ${model} makes the side than the price implies.`
                   : 'Ranked by how much more often the player has cleared the line than the price implies.'}
               </p>
               <ul className="plegs">
@@ -267,7 +268,7 @@ export default function PropBuilder({ setSlip }: Props) {
 
           <p className="muted small disclaimer">
             {lines
-              ? "FPI is ESPN's power-rating model and is blended half-and-half with the market, which is usually sharper on its own. It doesn't know about injuries or weather after the scan. Parlays carry a large built-in house edge, so treat this as research, not a sure thing."
+              ? `${model} is ESPN's power-rating model and is blended half-and-half with the market, which is usually sharper on its own. It doesn't know about injuries or late news after the scan. Parlays carry a large built-in house edge, so treat this as research, not a sure thing.`
               : `Hit rates over 10 games are a small sample, not true probabilities, and they don't account for matchups, minutes or
             lineup news after the scan. Legs from the same game move together. Parlays carry a large built-in house edge, so treat
             this as research, not a sure thing.`}

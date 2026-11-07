@@ -61,6 +61,9 @@ export const PROP_STATS: Partial<Record<LeagueKey, PropStat[]>> = {
   ],
 };
 
+// College hoops and the WNBA share the NBA's box-score columns.
+PROP_STATS.mcbb = PROP_STATS.wcbb = PROP_STATS.wnba = PROP_STATS.nba;
+
 export const propStat = (league: LeagueKey, key: string) => PROP_STATS[league]?.find((p) => p.key === key);
 
 export function normName(s: string) {

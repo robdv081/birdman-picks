@@ -16,6 +16,9 @@ export interface LegLive {
 
 const PERIODS: Partial<Record<LeagueKey, { n: number; mins: number }>> = {
   nba: { n: 4, mins: 12 },
+  mcbb: { n: 2, mins: 20 }, // men's college: two 20-minute halves
+  wcbb: { n: 4, mins: 10 }, // women's college and the WNBA: four 10-minute quarters
+  wnba: { n: 4, mins: 10 },
   nhl: { n: 3, mins: 20 },
   nfl: { n: 4, mins: 15 },
   cfb: { n: 4, mins: 15 },
