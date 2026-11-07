@@ -172,3 +172,11 @@ function normalizeEmail(v: unknown) {
   const e = v.trim().toLowerCase();
   return e.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) ? e : null;
 }
+
+/** Server-side gate: browser cached membership never authorizes research access. */
+export async function requirePro(request: Request, env: Env) {
+  needStripe(env);
+  const customer = await customerFromToken(env, bearer(request));
+  if (!customer) throw new HttpError(401, 'Sign in to Pro first.');
+  if (!(await customerIsPro(env, customer)).active) throw new HttpError(403, 'An active Pro subscription is required.');
+}

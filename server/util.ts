@@ -26,6 +26,7 @@ export interface Env {
   ADMIN_KEY?: string;
   /** Lets the pick agent post picks; they're marked as the model's. */
   AGENT_KEY?: string;
+  SCOUT_PUBLISH_KEY?: string;
   STRIPE_SECRET_KEY?: string;
   TOKEN_SECRET?: string;
   RESEND_API_KEY?: string;

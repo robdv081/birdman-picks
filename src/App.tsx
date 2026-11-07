@@ -6,6 +6,7 @@ import { captureCloses, closeKey, gradableKey, gradePending } from './grader';
 import { SEED_BETS, SEED_LINEUPS } from './seed';
 import { notify } from './alerts';
 import { useStored } from './store';
+import Scout from './components/Scout';
 import Scores from './components/Scores';
 import Bets from './components/Bets';
 import Fantasy from './components/Fantasy';
@@ -21,12 +22,14 @@ import { useRedZone } from './redzone';
 import { HELPLINE } from './guard';
 import { ProGate, ProNotice } from './components/Pro';
 import { startPro } from './pro';
+import { scoutEnabled } from './server';
 
-type Route = { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
+type Route = { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
 
 function parseHash(): Route {
   const h = location.hash.replace('#', '');
   if (h === '' || h === 'today') return { view: 'today' };
+  if (h === 'scout') return { view: 'scout' };
   if (h === 'props') return { view: 'props' };
   if (h === 'bets') return { view: 'bets' };
   if (h === 'fantasy') return { view: 'fantasy' };
@@ -116,6 +119,10 @@ export default function App() {
   useCloseCapture(bets, setBets);
   const liveFootball = useRedZone(bets);
   useEffect(startPro, []);
+  const [scoutOn, setScoutOn] = useState(false);
+  useEffect(() => {
+    scoutEnabled().then(setScoutOn);
+  }, []);
 
   const saveBet = (b: Bet) => {
     setBets((prev) => (prev.some((x) => x.id === b.id) ? prev.map((x) => (x.id === b.id ? b : x)) : [b, ...prev]));
@@ -163,12 +170,18 @@ export default function App() {
           <a className={route.view === 'pickem' ? 'on' : ''} href="#pickem">
             Pick'em
           </a>
+          {(scoutOn || route.view === 'scout') && (
+            <a className={route.view === 'scout' ? 'on' : ''} href="#scout">
+              Scout
+            </a>
+          )}
         </nav>
       </header>
 
       <main className="content">
         <ProNotice />
         <RedZoneBar games={liveFootball} />
+        {route.view === 'scout' && <Scout />}
         {route.view === 'today' && <Today bets={bets} setSlip={setSlip} />}
         {route.view === 'scores' && (
           <Scores

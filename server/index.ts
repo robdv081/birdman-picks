@@ -5,6 +5,7 @@ import { captureCloses, gradePending } from '../src/grader';
 import { getRecord, isAdmin, postPick, settleRecord } from './record';
 import { createPool, getPool, joinPool, savePoolPick, settlePools } from './pickem';
 import * as pro from './pro';
+import { getResearch, publishResearch, scoutEnabled } from './scout';
 import { HttpError, json, type Deps, type Env } from './util';
 
 export const liveDeps: Deps = {
@@ -44,6 +45,10 @@ export async function route(request: Request, env: Env, deps: Deps): Promise<Res
   const pool = path.match(/^\/api\/pools\/([A-Z0-9]{4,12})(\/picks)?$/);
   if (pool && m === 'GET' && !pool[2]) return getPool(request, env, deps, pool[1]);
   if (pool && m === 'PUT' && pool[2]) return savePoolPick(request, env, deps, pool[1]);
+
+  if (m === 'GET' && path === '/api/scout/enabled') return scoutEnabled(env);
+  if (m === 'GET' && path === '/api/pro/scout') return getResearch(request, env, deps);
+  if (m === 'POST' && path === '/api/scout/research') return publishResearch(request, env, deps);
 
   if (m === 'POST' && path === '/api/pro/claim') return pro.claim(request, env);
   if (m === 'GET' && path === '/api/pro/status') return pro.status(request, env);
@@ -90,3 +95,5 @@ export default {
 
 // For tests and anyone checking the record by hand.
 export { GENESIS, lockedFields, pickHash } from '../src/recordhash';
+
+export { research, breakEven, refreshResearch } from './scout';

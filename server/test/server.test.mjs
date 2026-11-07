@@ -336,3 +336,91 @@ test('Pro: restore by emailed code, rate limited, codes burn out', async () => {
   clock += 11 * 60_000;
   assert.equal((await call('POST', '/api/pro/restore/verify', { email: 'fan@example.com', code: code3 })).status, 400);
 });
+
+// ---------- Scout v2 / Analyst v1 ----------
+const researchMarket = (over = {}) => ({
+  league: 'nfl', eventId: '401', start: '2026-11-08T18:00:00Z', market: 'Kansas City +2.5',
+  odds: -110, bookmaker: 'Example book', availabilityConfirmed: true,
+  counterarguments: 'Road travel and a changed offensive line can reduce the estimate.',
+  passIf: 'Pass if the quarterback is unavailable or the price moves.',
+  evidence: [
+    {kind:'official', url:'https://www.nfl.com/injuries/', checkedAt:new Date(T0).toISOString(), note:'Official availability checked.'},
+    {kind:'bookmaker', url:'https://example.com/markets/401', checkedAt:new Date(T0).toISOString(), note:'Book price observed.'}
+  ],
+  estimate: {probability:0.58, method:'Independent example model trained on pregame team statistics.', validation:'Example held-out calibration assessment with recorded sample size.', source:'https://example.com/model-validation'},
+  ...over
+});
+test('Scout accepts a documented future market; Analyst computes break-even and flat units', async () => {
+  const r = await W.research(env, deps, [researchMarket()]);
+  assert.equal(r.candidates.length, 1);
+  assert.equal(r.candidates[0].units, 1);
+  assert.ok(Math.abs(r.candidates[0].breakEven - 110/210) < 1e-9);
+  assert.equal(r.feeds.length, 1, 'only the leagues being researched are downloaded');
+});
+test('Scout rejects stale, future-dated, forged official and missing-price evidence', async () => {
+  for (const bad of [
+    researchMarket({odds:99}),
+    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,checkedAt:new Date(T0-31*60000).toISOString()}))}),
+    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,checkedAt:new Date(T0+1).toISOString()}))}),
+    researchMarket({evidence:researchMarket().evidence.map(e=>({...e,url:'https://nfl.com.evil.example/fake'}))}),
+    researchMarket({availabilityConfirmed:false}), researchMarket({estimate:undefined})
+  ]) assert.equal((await W.research(env,deps,[bad])).candidates.length,0);
+});
+test('Scout rejects changed starts and in-progress events', async () => {
+  assert.equal((await W.research(env,deps,[researchMarket({start:'2026-11-08T18:01:00Z'})])).candidates.length,0);
+  games['nfl|2026-11-08'][0].state='in';
+  assert.equal((await W.research(env,deps,[researchMarket()])).candidates.length,0);
+});
+test('Analyst selects at most one candidate per event and passes missing estimates', async () => {
+  const r=await W.research(env,deps,[researchMarket(),researchMarket(),researchMarket({estimate:undefined})]);
+  assert.equal(r.candidates.length,1);
+  assert.equal(r.passes.length,2);
+});
+test('Feed failure stays stale and does not become an empty successful check', async () => {
+  deps.games=async()=>{throw Error('offline')};
+  const r=await W.research(env,deps,[researchMarket()]);
+  assert.equal(r.candidates.length,0);assert.ok(r.feeds.every(f=>f.stale));
+});
+test('Research publisher requires a separate key; reports append without touching the record', async () => {
+  assert.equal((await call('POST','/api/scout/research',{markets:[]},owner)).status,401);
+  env.SCOUT_PUBLISH_KEY='test-scout-key';
+  const headers={Authorization:'Bearer test-scout-key'};
+  assert.equal((await call('POST','/api/scout/research',{markets:[researchMarket()]},headers)).status,201);
+  assert.equal((await call('POST','/api/scout/research',{markets:[]},headers)).status,201);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,2);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM picks').get().n,0);
+});
+test('An empty report downloads no schedules; the app can see whether a publisher is connected', async () => {
+  let calls = 0; const real = deps.games; deps.games = async (...a) => (calls++, real(...a));
+  const r = await W.research(env, deps, []);
+  assert.equal(calls, 0); assert.equal(r.feeds.length, 0); assert.equal(r.status, 'no_verified_picks');
+  delete env.SCOUT_PUBLISH_KEY;
+  assert.equal((await call('GET', '/api/scout/enabled')).body.enabled, false);
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key';
+  assert.equal((await call('GET', '/api/scout/enabled')).body.enabled, true);
+});
+test('Pro research fails closed with no membership; cron preserves a fresh published report', async () => {
+  env.STRIPE_SECRET_KEY='test';env.TOKEN_SECRET='test-token-secret';
+  assert.equal((await call('GET','/api/pro/scout')).status,401);
+  env.SCOUT_PUBLISH_KEY='test-scout-key';
+  await call('POST','/api/scout/research',{markets:[]},{Authorization:'Bearer test-scout-key'});
+  await W.refreshResearch(env,deps);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,1);
+  clock+=31*60000;await W.refreshResearch(env,deps);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM scout_reports').get().n,2);
+});
+test('Pro report access rechecks subscription, schedule and report age', async () => {
+  const {subs}=fakeStripe();
+  env.SCOUT_PUBLISH_KEY='test-scout-key';
+  await call('POST','/api/scout/research',{markets:[researchMarket()]},{Authorization:'Bearer test-scout-key'});
+  const c=await call('POST','/api/pro/claim',{session_id:'cs_test_paidsession123'});
+  const auth={Authorization:'Bearer '+c.body.token};
+  assert.equal((await call('GET','/api/pro/scout',null,auth)).body.report.candidates.length,1);
+  games['nfl|2026-11-08'][0].state='in';
+  assert.equal((await call('GET','/api/pro/scout',null,auth)).body.report.candidates.length,0);
+  games['nfl|2026-11-08'][0].state='pre';clock+=31*60000;
+  const old=await call('GET','/api/pro/scout',null,auth);
+  assert.equal(old.body.expired,true);assert.equal(old.body.report.candidates.length,0);
+  subs.cus_A=[{status:'canceled'}];
+  assert.equal((await call('GET','/api/pro/scout',null,auth)).status,403);
+});

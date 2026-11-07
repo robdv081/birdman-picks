@@ -33,6 +33,16 @@ export async function api<T>(path: string, opts: { method?: string; body?: unkno
   return data as T;
 }
 
+/** True once a Scout research publisher is connected on the server. Until then the Scout tab stays hidden. */
+export async function scoutEnabled(): Promise<boolean> {
+  if (!SERVER_URL) return false;
+  try {
+    return (await api<{ enabled: boolean }>('/api/scout/enabled')).enabled === true;
+  } catch {
+    return false;
+  }
+}
+
 // ---------- the verified record ----------
 
 export interface RecordPick {
