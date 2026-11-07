@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Selection } from '../bets';
-import { BOOK_LABEL, copyText, dkTarget, fanduelUrl, slipText, type DkTarget } from '../books';
+import { BOOK_LABEL, copyText, dkSlipUrl, dkTarget, fanduelUrl, slipText, type DkTarget } from '../books';
 
 interface Props {
   picks: Selection[];
@@ -35,6 +35,8 @@ export default function SendToBook({ picks, title }: Props) {
   const leagues = [...new Set(picks.map((p) => p.league))];
   const fdUrl = fanduelUrl(leagues.length === 1 ? leagues[0] : undefined);
   const multi = picks.length > 1;
+  const allUrl = targets ? dkSlipUrl(targets) : null;
+  const exactCount = targets?.filter((t) => t.exact).length ?? 0;
 
   return (
     <div className="sendbook">
@@ -53,9 +55,23 @@ export default function SendToBook({ picks, title }: Props) {
           {!targets && <p className="muted small">Finding the DraftKings lines…</p>}
           {targets && (
             <>
+              {allUrl && (
+                <div className="sendall">
+                  <a className="btn primary" href={allUrl} target="_blank" rel="noopener noreferrer">
+                    Add all {exactCount} picks to slip
+                  </a>
+                  <p className="muted small">
+                    One tap sends every pick to your DraftKings bet slip.
+                    {exactCount < picks.length ? ` The other ${picks.length - exactCount} can't go straight to the slip; add them from the list below.` : ''} If
+                    only one shows up, use the buttons below to add the rest.
+                  </p>
+                </div>
+              )}
               <p className="small">
                 {multi
-                  ? 'Tap each pick. DraftKings adds it to your bet slip and keeps it there while you come back for the next one.'
+                  ? allUrl
+                    ? 'Or one at a time: DraftKings keeps each pick on your slip while you come back for the next.'
+                    : 'Tap each pick. DraftKings adds it to your bet slip and keeps it there while you come back for the next one.'
                   : targets[0].exact
                     ? 'Opens DraftKings with this pick on your bet slip.'
                     : "DraftKings has no direct link for this pick, so it opens the game. Find it there."}

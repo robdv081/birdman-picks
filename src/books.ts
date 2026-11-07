@@ -92,6 +92,25 @@ export async function dkTarget(s: Selection): Promise<DkTarget> {
   return url ? { url, exact: true } : page;
 }
 
+/**
+ * One DraftKings link carrying every exact pick, for adding a whole parlay to the bet slip in one tap.
+ * DraftKings' own shared bet slips list several outcome ids in one `outcomes` value joined with "+".
+ * Returns null with fewer than two exact picks (a single pick already has its own link).
+ */
+export function dkSlipUrl(targets: DkTarget[]): string | null {
+  const exact = targets.filter((t) => t.exact);
+  const ids = exact.map((t) => {
+    try {
+      return new URL(t.url).searchParams.get('outcomes');
+    } catch {
+      return null;
+    }
+  });
+  if (exact.length < 2 || ids.some((id) => !id)) return null;
+  const first = new URL(exact[0].url);
+  return `${first.origin}${first.pathname}?outcomes=${ids.map((id) => encodeURIComponent(id!)).join('+')}`;
+}
+
 export function openUrl(url: string) {
   // A new tab keeps the app where it was; on a phone the link opens the sportsbook app when it's installed.
   const w = window.open(url, '_blank', 'noopener');

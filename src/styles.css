@@ -495,3 +495,6 @@ table.optpool td input { width: auto; }
 .sendlineups .row { display: flex; flex-wrap: wrap; gap: 8px; }
 .game.noodds .ghead, .game.noodds .trow { grid-template-columns: 1fr auto; }
 .game.noodds .ghead .state { grid-column: 1 / -1; flex-wrap: wrap; }
+
+.sendall { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.sendall .btn { align-self: flex-start; }
