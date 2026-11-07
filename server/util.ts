@@ -24,6 +24,8 @@ export interface Env {
   APP_URL?: string;
   /** Lets the owner post picks to the public record. */
   ADMIN_KEY?: string;
+  /** Lets the pick agent post picks; they're marked as the model's. */
+  AGENT_KEY?: string;
   STRIPE_SECRET_KEY?: string;
   TOKEN_SECRET?: string;
   RESEND_API_KEY?: string;

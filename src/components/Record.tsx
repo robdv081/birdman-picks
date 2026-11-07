@@ -118,7 +118,8 @@ export default function Record() {
                   : `⚠ Pick #${chain.brokenAt} doesn't match its fingerprint`}
             </b>
             <p className="muted small">
-              Picks are locked on the Birdman server before the game starts, stamped with the server's clock, and graded automatically from ESPN's
+              Picks marked "Model pick" are found and posted automatically by the Birdman model, which compares each player's recent games and
+              ESPN's power ratings with the sportsbook's price. Every pick is locked on the Birdman server before the game starts, stamped with the server's clock, and graded automatically from ESPN's
               final scores. There's no edit or delete button. Each pick carries a fingerprint of itself and the pick before it, and your phone just
               re-checked every one, so a changed or missing pick would show up here.
             </p>
@@ -161,6 +162,7 @@ function PickCard({ p }: { p: RecordPick }) {
           <b>{p.selection}</b>
           <small className="muted">
             #{p.seq} · {LEAGUES[p.league]?.label ?? p.league} · {p.matchup} · {fmtDate(p.date)}
+            {p.author === 'model' && <span className="pill model">Model pick</span>}
           </small>
         </div>
         <div className="rside">
@@ -170,7 +172,7 @@ function PickCard({ p }: { p: RecordPick }) {
       </div>
       {p.reason && (
         <p className="why">
-          <span className="muted small">Why I like it</span>
+          <span className="muted small">{p.author === 'model' ? 'Why the model likes it' : 'Why I like it'}</span>
           {p.reason}
         </p>
       )}

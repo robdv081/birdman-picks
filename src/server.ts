@@ -53,6 +53,8 @@ export interface RecordPick {
   stat: string | null;
   units: number;
   reason: string;
+  /** 'owner' (posted by hand) or 'model' (posted by the pick agent). */
+  author: string;
   prevHash: string;
   hash: string;
   status: 'pending' | 'won' | 'lost' | 'push' | 'void';
@@ -93,6 +95,7 @@ const locked = (p: RecordPick): LockedPick => ({
   stat: p.stat,
   units: p.units,
   reason: p.reason,
+  author: p.author,
 });
 
 /** Re-checks the whole chain on this phone. Returns the first broken pick number, or null if it all holds. */

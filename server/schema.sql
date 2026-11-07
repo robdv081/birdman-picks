@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS picks (
   stat TEXT,
   units REAL NOT NULL,
   reason TEXT NOT NULL DEFAULT '',
+  author TEXT NOT NULL DEFAULT 'owner', -- 'owner' or 'model' (the pick agent)
   prev_hash TEXT NOT NULL,
   hash TEXT NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending',

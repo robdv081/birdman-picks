@@ -24,6 +24,7 @@ export interface PickRow {
   stat: string | null;
   units: number;
   reason: string;
+  author: string;
   prev_hash: string;
   hash: string;
   status: string;
@@ -37,14 +38,23 @@ export interface PickRow {
 
 const MARKETS: Market[] = ['ml', 'spread', 'total', 'prop'];
 
-export function isAdmin(request: Request, env: Env) {
+const strong = (k?: string) => !!k && k.length >= 16;
+
+/** Who is posting: the owner, the pick agent, or nobody allowed. */
+export function poster(request: Request, env: Env): 'owner' | 'model' | null {
   const key = bearer(request);
-  return !!env.ADMIN_KEY && env.ADMIN_KEY.length >= 16 && timingSafeEqual(key, env.ADMIN_KEY);
+  if (!key) return null;
+  if (strong(env.ADMIN_KEY) && timingSafeEqual(key, env.ADMIN_KEY!)) return 'owner';
+  if (strong(env.AGENT_KEY) && timingSafeEqual(key, env.AGENT_KEY!)) return 'model';
+  return null;
 }
+
+export const isAdmin = (request: Request, env: Env) => poster(request, env) === 'owner';
 
 /** POST /api/record/picks — owner only. */
 export async function postPick(request: Request, env: Env, deps: Deps) {
-  if (!isAdmin(request, env)) throw new HttpError(401, 'Owner key required.');
+  const author = poster(request, env);
+  if (!author) throw new HttpError(401, 'Owner key required.');
   const b = await readJson(request);
   const league = str(b.league, 20) as LeagueKey;
   const eventId = str(b.eventId, 30);
@@ -107,16 +117,17 @@ export async function postPick(request: Request, env: Env, deps: Deps) {
     stat: stat || null,
     units: Math.round(units * 10) / 10,
     reason,
+    author,
   };
   const prev = last?.hash ?? GENESIS;
   const hash = await pickHash(prev, row);
   try {
     await env.DB.prepare(
-      `INSERT INTO picks (seq, id, created_at, start_at, league, event_id, date, matchup, market, side, line, odds, selection, player, stat, units, reason, prev_hash, hash)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO picks (seq, id, created_at, start_at, league, event_id, date, matchup, market, side, line, odds, selection, player, stat, units, reason, author, prev_hash, hash)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(row.seq, row.id, row.created_at, row.start_at, row.league, row.event_id, row.date, row.matchup, row.market, row.side, row.line,
-        row.odds, row.selection, row.player, row.stat, row.units, row.reason, prev, hash)
+        row.odds, row.selection, row.player, row.stat, row.units, row.reason, row.author, prev, hash)
       .run();
   } catch {
     // Two posts at the same moment both took the same number; the second one should just try again.
@@ -144,6 +155,7 @@ export function publicPick(r: PickRow) {
     stat: r.stat,
     units: r.units,
     reason: r.reason,
+    author: r.author,
     prevHash: r.prev_hash,
     hash: r.hash,
     status: r.status,

@@ -9,6 +9,7 @@ const { pickHash, lockedFields, GENESIS } = W;
 
 const ORIGIN = 'https://robdv081.github.io';
 const ADMIN = 'owner-key-0123456789abcdef';
+const AGENT = 'agent-key-0123456789abcdef';
 const T0 = Date.parse('2026-11-08T15:00:00Z'); // Sunday 10am ET
 let env, deps, clock, games, gradeResults, closeResults;
 
@@ -29,7 +30,7 @@ beforeEach(() => {
   games = { 'nfl|2026-11-08': [game('401'), game('402', { away: { id: '3', abbr: 'DAL', name: 'Dallas', score: null }, home: { id: '4', abbr: 'NYG', name: 'Giants', score: null } })] };
   gradeResults = new Map();
   closeResults = new Map();
-  env = { DB: makeDB(new URL('../schema.sql', import.meta.url)), ALLOWED_ORIGIN: ORIGIN, ADMIN_KEY: ADMIN };
+  env = { DB: makeDB(new URL('../schema.sql', import.meta.url)), ALLOWED_ORIGIN: ORIGIN, ADMIN_KEY: ADMIN, AGENT_KEY: AGENT };
   deps = {
     now: () => clock,
     games: async (lg, date) => structuredClone(games[`${lg}|${date}`] ?? []),
@@ -113,7 +114,7 @@ test('the public record chains hashes and anyone can recheck them', async () => 
   for (const p of list) {
     assert.equal(p.prevHash, prev);
     const row = { seq: p.seq, id: p.id, created_at: p.createdAt, start_at: p.startAt, league: p.league, event_id: p.eventId, date: p.date, matchup: p.matchup,
-      market: p.market, side: p.side, line: p.line, odds: p.odds, selection: p.selection, player: p.player, stat: p.stat, units: p.units, reason: p.reason };
+      market: p.market, side: p.side, line: p.line, odds: p.odds, selection: p.selection, player: p.player, stat: p.stat, units: p.units, reason: p.reason, author: p.author };
     assert.equal(await pickHash(prev, row), p.hash);
     prev = p.hash;
   }
@@ -162,6 +163,17 @@ test('scheduled job records the close, grades, and the summary adds up', async (
 test('owner key check', async () => {
   assert.equal((await call('GET', '/api/record/owner', null, owner)).status, 200);
   assert.equal((await call('GET', '/api/record/owner', null, { Authorization: 'Bearer wrong-key-0123456789' })).status, 401);
+});
+
+test('the pick agent posts with its own key; its picks are marked as the model\'s, and it cannot pass as the owner', async () => {
+  const r = await call('POST', '/api/record/picks', pick(), { Authorization: 'Bearer ' + AGENT });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.pick.author, 'model');
+  const o = await call('POST', '/api/record/picks', pick({ eventId: '402', market: 'ml', side: 'home', odds: 135, line: null }), owner);
+  assert.equal(o.body.pick.author, 'owner');
+  assert.equal((await call('GET', '/api/record/owner', null, { Authorization: 'Bearer ' + AGENT })).status, 401);
+  const list = (await call('GET', '/api/record')).body.picks;
+  assert.deepEqual(list.map((p) => p.author), ['owner', 'model']);
 });
 
 // ---------- pick'em ----------

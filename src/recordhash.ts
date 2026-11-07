@@ -22,12 +22,14 @@ export interface LockedPick {
   stat: string | null;
   units: number;
   reason: string;
+  /** 'owner' when posted by hand, 'model' when posted by the pick agent. */
+  author: string;
 }
 
 export function lockedFields(p: LockedPick) {
   return JSON.stringify([
     p.seq, p.id, p.created_at, p.start_at, p.league, p.event_id, p.date, p.matchup, p.market, p.side,
-    p.line, p.odds, p.selection, p.player, p.stat, p.units, p.reason,
+    p.line, p.odds, p.selection, p.player, p.stat, p.units, p.reason, p.author,
   ]);
 }
 
