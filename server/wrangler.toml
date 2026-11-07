@@ -15,4 +15,4 @@ crons = ["*/5 * * * *"]
 [[d1_databases]]
 binding = "DB"
 database_name = "birdman"
-database_id = "PASTE_DATABASE_ID_HERE"
+database_id = "ecb3528b-8f42-4bbe-9c90-d77b2c167f67"
