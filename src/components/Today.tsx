@@ -5,7 +5,6 @@ import { lineMoves, type Move } from '../movement';
 import { gameWeather, passGameFactor, weatherNote, type GameWeather } from '../weather';
 import { candidateLabel, scanProps, toLeg, type Candidate } from '../propgen';
 import { LINE_LEAGUES, scanGameLines } from '../gamelines';
-import { pool } from '../market';
 import { loadSnapshots } from '../snapshots';
 import { SPORT_LABEL } from '../dfs';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
@@ -29,11 +28,9 @@ export default function Today({ bets, setSlip }: { bets: Bet[]; setSlip: (fn: (p
       // Weather watch: outdoor football today and tomorrow.
       const tomorrow = await Promise.all((['nfl', 'cfb'] as LeagueKey[]).map((lg) => fetchScoreboard(lg, shiftYMD(today, 1)).catch(() => [] as Game[])));
       const football = [...all, ...tomorrow.flat()].filter((g) => (g.league === 'nfl' || g.league === 'cfb') && g.state === 'pre' && g.indoor === false && g.odds);
-      const found: { g: Game; w: GameWeather }[] = [];
-      await pool(football.slice(0, 50), 6, async (g) => {
-        const w = await gameWeather(g);
-        if (w && passGameFactor(w) < 1) found.push({ g, w });
-      });
+      // Ask for every game at once: the weather module sends them as one batched request.
+      const all2 = await Promise.all(football.map(async (g) => ({ g, w: await gameWeather(g) })));
+      const found = all2.filter((x): x is { g: Game; w: GameWeather } => !!x.w && passGameFactor(x.w) < 1);
       if (live) setWeather(found.sort((a, b) => b.w.windMph - a.w.windMph));
     });
     return () => {
