@@ -12,7 +12,9 @@ import { fmtAmerican, kellyUnits } from '../src/bets';
 const MAX_PER_DAY = 3;
 const PROP_LEAGUES: LeagueKey[] = ['nba', 'nhl', 'nfl'];
 const MIN_EDGE = { prop: 0.05, line: 0.04 }; // win-probability points over the book's price
-const ODDS_RANGE = [-250, 400]; // no heavy favorites, no lottery tickets
+// Bigger gaps than this are almost always a short hot streak, not a mispriced line, so they're skipped.
+const MAX_EDGE = 0.15;
+const ODDS_RANGE = [-200, 180]; // no heavy favorites, no long shots
 const MIN_LEAD_MS = 30 * 60_000; // leave time before kickoff
 const MAX_LEAD_MS = 12 * 3600_000; // only today's slate
 
@@ -42,7 +44,8 @@ export function choose(cands: Candidate[], now: number, taken: Set<string>, slot
       c.odds >= ODDS_RANGE[0] &&
       c.odds <= ODDS_RANGE[1] &&
       !c.gtd &&
-      c.edge >= (c.kind === 'line' ? MIN_EDGE.line : MIN_EDGE.prop)
+      c.edge >= (c.kind === 'line' ? MIN_EDGE.line : MIN_EDGE.prop) &&
+      c.edge <= MAX_EDGE
     );
   });
   const out: Candidate[] = [];
