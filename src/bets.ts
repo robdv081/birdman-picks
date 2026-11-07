@@ -1,4 +1,5 @@
 import type { Game, GameSummary, LeagueKey } from './espn';
+import { load } from './store';
 import { propStat, statValue } from './stats';
 
 export type Market = 'ml' | 'spread' | 'total' | 'parlay' | 'prop' | 'other';
@@ -26,6 +27,8 @@ export interface Selection {
   closeOdds?: number;
   closeLine?: number;
   closeChecked?: boolean;
+  /** Estimated win probability from the prop builder or FPI model, for stake sizing. */
+  est?: number;
 }
 
 export interface Leg extends Selection {
@@ -152,6 +155,28 @@ export function settleParlay(b: Bet, legs: Leg[]): Pick<Bet, 'status' | 'settled
   if (!winners.length) return { status: 'push' };
   // Keep the book's price (which may include an SGP adjustment) unless legs dropped out.
   return { status: 'won', settledOdds: winners.length === legs.length ? undefined : parlayOdds(winners) };
+}
+
+// Full Kelly assumes a perfect probability; ours come from small samples and run hot. So: count only half the
+// model's edge over the price, stake an eighth of Kelly on that, and never more than 3% of bankroll.
+const EDGE_TRUST = 0.5;
+const KELLY_FRACTION = 0.125;
+const KELLY_CAP = 0.03;
+const DEFAULT_BANKROLL_UNITS = 100;
+
+/** Bankroll in units from the My Bets settings, or 100 units when it isn't set. */
+export function bankrollUnits(): number {
+  const s = load<{ unitSize?: number; startBankroll?: number }>('bp.settings', {});
+  return s.unitSize && s.startBankroll ? s.startBankroll / s.unitSize : DEFAULT_BANKROLL_UNITS;
+}
+
+/** Suggested stake in units for a bet with estimated win probability `p`; 0 when the price offers no edge. */
+export function kellyUnits(est: number, odds: number, bankroll = bankrollUnits()): number {
+  const p = breakEven(odds) + EDGE_TRUST * (est - breakEven(odds));
+  const b = toDecimal(odds) - 1;
+  const f = (b * p - (1 - p)) / b;
+  if (f <= 0) return 0;
+  return Math.round(Math.min(f * KELLY_FRACTION, KELLY_CAP) * bankroll * 10) / 10;
 }
 
 export interface Summary {

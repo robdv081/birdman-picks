@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { LEAGUE_KEYS, type Game, type LeagueKey } from './espn';
-import type { Bet, Leg } from './bets';
+import { fmtUnits, profit, type Bet, type Leg } from './bets';
 import type { Lineup } from './fantasy';
 import { captureCloses, closeKey, gradableKey, gradePending } from './grader';
 import { SEED_BETS, SEED_LINEUPS } from './seed';
+import { notify } from './alerts';
 import { useStored } from './store';
 import Scores from './components/Scores';
 import Bets from './components/Bets';
@@ -12,11 +13,13 @@ import BetModal from './components/BetModal';
 import GameDetails from './components/GameDetails';
 import ParlaySlip from './components/ParlaySlip';
 import PropBuilder from './components/PropBuilder';
+import Today from './components/Today';
 
-type Route = { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' };
+type Route = { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' };
 
 function parseHash(): Route {
   const h = location.hash.replace('#', '');
+  if (h === '' || h === 'today') return { view: 'today' };
   if (h === 'props') return { view: 'props' };
   if (h === 'bets') return { view: 'bets' };
   if (h === 'fantasy') return { view: 'fantasy' };
@@ -34,6 +37,13 @@ function useAutoGrade(bets: Bet[], setBets: (fn: (prev: Bet[]) => Bet[]) => void
     let cancelled = false;
     async function run() {
       const updates = await gradePending(betsRef.current);
+      for (const [id, u] of updates) {
+        const b = betsRef.current.find((x) => x.id === id);
+        if (b && u.status && u.status !== 'pending') {
+          const settled = { ...b, ...u };
+          notify(u.status === 'won' ? 'Bet won' : u.status === 'lost' ? 'Bet lost' : `Bet ${u.status}`, `${b.selection} · ${fmtUnits(profit(settled))}`, `${id}-settled`);
+        }
+      }
       if (!cancelled && updates.size)
         setBets((prev) => prev.map((b) => (b.status === 'pending' && updates.has(b.id) ? { ...b, ...updates.get(b.id) } : b)));
     }
@@ -116,11 +126,14 @@ export default function App() {
   return (
     <div className={`app ${slip.length ? 'has-slip' : ''}`}>
       <header className="topbar">
-        <a className="brand" href={`#${lastLeague.current}`}>
+        <a className="brand" href="#today">
           <img src="icon.svg" alt="" width={28} height={28} />
           <span>Birdman Picks</span>
         </a>
         <nav className="tabs" aria-label="Sections">
+          <a className={route.view === 'today' ? 'on' : ''} href="#today">
+            Today
+          </a>
           <a className={route.view === 'scores' ? 'on' : ''} href={`#${lastLeague.current}`}>
             Scores
           </a>
@@ -128,7 +141,7 @@ export default function App() {
             Props
           </a>
           <a className={route.view === 'bets' ? 'on' : ''} href="#bets">
-            My Bets{pendingCount > 0 && <span className="badge">{pendingCount}</span>}
+            Bets{pendingCount > 0 && <span className="badge">{pendingCount}</span>}
           </a>
           <a className={route.view === 'fantasy' ? 'on' : ''} href="#fantasy">
             Fantasy
@@ -137,6 +150,7 @@ export default function App() {
       </header>
 
       <main className="content">
+        {route.view === 'today' && <Today bets={bets} setSlip={setSlip} />}
         {route.view === 'scores' && (
           <Scores
             league={route.league}

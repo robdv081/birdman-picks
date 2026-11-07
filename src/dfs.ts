@@ -6,6 +6,7 @@ import { fetchGamelog, fetchPropBets, fetchRoster, ladderMean, milestoneRungs, p
 import { canFill, parseSalaries, projectPoints, type Risk } from './optimizer';
 import { sameName } from './stats';
 import { shiftYMD, todayYMD } from './store';
+import { gameWeather, passGameFactor, weatherNote, type GameWeather } from './weather';
 
 export type Site = 'dk' | 'fd';
 export type Sport = 'nba' | 'nfl' | 'nhl';
@@ -45,6 +46,7 @@ export interface DfsPlayer extends SlatePlayer {
   out: boolean;
   implied?: number; // the team's implied points from the betting lines
   recent: number[]; // fantasy points in recent games, newest first
+  weather?: string; // NFL: kickoff conditions when they move the projection
 }
 
 export const SPORT_LABEL: Record<Sport, string> = { nba: 'NBA', nfl: 'NFL', nhl: 'NHL' };
@@ -65,7 +67,7 @@ const ALIAS: Record<Sport, Record<string, string>> = {
   nba: { GSW: 'GS', NOP: 'NO', NYK: 'NY', SAS: 'SA', PHO: 'PHX', UTA: 'UTAH', WAS: 'WSH' },
   nhl: { UTA: 'UTAH', WAS: 'WSH', LAK: 'LA', NJD: 'NJ', SJS: 'SJ', TBL: 'TB', MON: 'MTL', CLS: 'CBJ', NAS: 'NSH', ANH: 'ANA', CAL: 'CGY' },
 };
-const toEspn = (sport: Sport, abbr?: string) => (abbr ? ALIAS[sport][abbr.toUpperCase()] ?? abbr.toUpperCase() : '');
+export const toEspn = (sport: Sport, abbr?: string) => (abbr ? ALIAS[sport][abbr.toUpperCase()] ?? abbr.toUpperCase() : '');
 
 /** FanDuel (or any site) player-list CSV → a slate for the given contest format. */
 export function slateFromCsv(text: string, sport: Sport, site: Site, slots: string[], cap: number): Slate {
@@ -188,7 +190,8 @@ export async function projectSlate(slate: Slate, onProgress: (msg: string) => vo
   onProgress('Loading games and betting lines…');
   const [today, tomorrow, injuries] = await Promise.all([
     fetchScoreboard(league, day).catch(() => [] as Game[]),
-    fetchScoreboard(league, shiftYMD(day, 1)).catch(() => [] as Game[]),
+    // NFL slates can run Sunday–Monday. Other sports play daily, so tomorrow's game would overwrite tonight's lines.
+    sport === 'nfl' ? fetchScoreboard(league, shiftYMD(day, 1)).catch(() => [] as Game[]) : Promise.resolve([] as Game[]),
     fetchInjuries(league).catch(() => ({} as Record<string, Injury[]>)),
   ]);
   const slateTeams = new Set(slate.players.map((p) => toEspn(sport, p.team)));
@@ -197,6 +200,14 @@ export async function projectSlate(slate: Slate, onProgress: (msg: string) => vo
   const impliedVals = Object.values(implied);
   const slateAvg = impliedVals.length ? mean(impliedVals) : 0;
   const injuryList = Object.values(injuries).flat();
+  // NFL: kickoff wind and rain for outdoor games.
+  const weather = new Map<string, GameWeather>();
+  if (sport === 'nfl') {
+    await Promise.all(games.map(async (g) => {
+      const w = await gameWeather(g);
+      if (w) for (const t of [g.home.abbr, g.away.abbr]) weather.set(t, w);
+    }));
+  }
 
   onProgress('Matching players to rosters…');
   const rosters = new Map<string, (RosterPlayer & { team: string })[]>();
@@ -312,6 +323,13 @@ export async function projectSlate(slate: Slate, onProgress: (msg: string) => vo
         marketPts = nhlMeanPoints(site, { g: m.g ?? avgOf('goals'), a: m.a ?? avgOf('assists'), sog: m.sog ?? avgOf('shotsTotal') }, p.pos.includes('D'));
       }
       let proj = marketPts != null ? 0.7 * marketPts + 0.3 * base : base;
+      // Wind and heavy rain cut passing; defenses gain about half of what the offense loses.
+      const wx = sport === 'nfl' ? weather.get(espn?.team ?? team) ?? weather.get(isDst ? team : '') : undefined;
+      const passF = passGameFactor(wx ?? null);
+      if (passF < 1) {
+        if (isDst) proj *= 1 + (1 - passF) / 2;
+        else if (p.pos.some((x) => x === 'QB' || x === 'WR' || x === 'TE')) proj *= passF;
+      }
       const source = marketPts != null ? 'prop market + form' : form != null ? 'recent form' : season != null ? 'season average' : 'no data';
 
       const risks: Risk[] = [];
@@ -339,6 +357,7 @@ export async function projectSlate(slate: Slate, onProgress: (msg: string) => vo
         out,
         implied: isDst || goalie ? theirs : own,
         recent,
+        weather: passF < 1 ? weatherNote(wx ?? null) ?? undefined : undefined,
       };
     })
     .sort((a, b) => b.proj - a.proj);

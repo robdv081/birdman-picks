@@ -209,6 +209,7 @@ export function toLeg(c: Candidate): Leg {
     odds: c.odds,
     selection: candidateLabel(c),
     status: 'pending' as const,
+    est: c.est,
   };
   if (c.kind === 'line') {
     const market = c.stat as 'ml' | 'spread';

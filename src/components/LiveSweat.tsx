@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { fmtAmerican, fmtUnits, toDecimal, type Bet } from '../bets';
 import { gradableKey } from '../grader';
 import { sweatBets, type BetLive } from '../live';
+import { alertOnChanges, alertStatus } from '../alerts';
 
 const REFRESH_MS = 30_000;
 
@@ -11,6 +12,7 @@ export default function LiveSweat({ bets, compact = false }: { bets: Bet[]; comp
   const betsRef = useRef(bets);
   betsRef.current = bets;
   const key = gradableKey(bets);
+  const seen = useRef<ReturnType<typeof alertOnChanges> | null>(null);
 
   useEffect(() => {
     if (!key) {
@@ -19,9 +21,11 @@ export default function LiveSweat({ bets, compact = false }: { bets: Bet[]; comp
     }
     let cancelled = false;
     const run = async () => {
-      if (document.hidden) return;
+      // Keep checking in the background only when alerts are on; otherwise save the requests.
+      if (document.hidden && alertStatus() !== 'on') return;
       const r = await sweatBets(betsRef.current);
       if (!cancelled) {
+        seen.current = alertOnChanges(seen.current, r);
         setRows(r);
         setUpdated(new Date());
       }

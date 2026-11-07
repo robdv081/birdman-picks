@@ -4,6 +4,7 @@ import { loadDkSlates, projectSlate, slateFromCsv, SPORT_LABEL, type DfsPlayer, 
 import { TEMPLATES, type Lineup } from '../fantasy';
 import { dkUploadCsv, generate, type ContestStyle, type GenLineup } from '../generator';
 import { RISK_LABEL } from '../optimizer';
+import { saveSnapshot } from '../snapshots';
 
 const money = (n: number) => `$${n.toLocaleString()}`;
 const SPORTS: Sport[] = ['nfl', 'nba', 'nhl'];
@@ -33,6 +34,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [players, setPlayers] = useState<DfsPlayer[] | null>(null);
+  const [snapId, setSnapId] = useState<string | null>(null);
   const [slate, setSlate] = useState<Slate | null>(null);
   const [progress, setProgress] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,6 +80,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
     try {
       const p = await projectSlate(chosen, setProgress);
       setPlayers(p);
+      setSnapId(saveSnapshot(chosen, chosen.site === 'dk' ? `dk-${chosen.sport}` : fdTemplate, p));
       setSlate(chosen);
       setLocked(new Set());
       setExcluded(new Set());
@@ -133,6 +136,8 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
       cap: slate.cap,
       slots: l.slots.map((s) => ({ slot: s.slot, player: s.player.name, team: s.player.opp ? `${s.player.team} vs ${s.player.opp}` : s.player.team, salary: s.player.salary, points: null })),
       notes: `Generated (${style === 'gpp' ? 'tournament' : 'cash'}): projected ${l.proj.toFixed(1)}, ceiling ${l.ceiling.toFixed(1)}.`,
+      projected: Math.round(l.proj * 10) / 10,
+      slateId: snapId ?? undefined,
     });
     setSaved((prev) => new Set(prev).add(i));
   };
@@ -501,6 +506,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                         {p.opp ? ` v ${p.opp}` : ''}
                       </small>
                       {p.risks.length > 0 && <small className="inj"> · {p.risks.map((r) => RISK_LABEL[r]).join(', ')}</small>}
+                      {p.weather && <small className="inj"> · {p.weather}</small>}
                     </td>
                     <td>{money(p.salary)}</td>
                     <td>{p.proj.toFixed(1)}</td>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { breakEven, fmtAmerican, fmtPct, newId, parlayOdds, toDecimal, type Bet, type Leg } from '../bets';
+import { StakeNote } from './PropBuilder';
 
 interface Props {
   slip: Leg[];
@@ -92,6 +93,7 @@ export default function ParlaySlip({ slip, setSlip, onSave }: Props) {
           </p>
         )}
 
+        {ok && slip.every((l) => l.est != null) && <StakeNote p={slip.reduce((x, l) => x * l.est!, 1)} odds={price} />}
         <div className="actions">
           <button className="btn danger" onClick={() => setSlip([])}>
             Clear

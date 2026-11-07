@@ -5,6 +5,8 @@ import { canScore, fantasyPoints } from '../stats';
 import { emptySlots, templateFor, TEMPLATES, totals, type Lineup, type Slot } from '../fantasy';
 import { fmtDate, todayYMD } from '../store';
 import Generator from './Generator';
+import ProjectionReport from './ProjectionReport';
+import { checkLateSwap, type SwapCheck } from '../lateswap';
 
 interface Props {
   lineups: Lineup[];
@@ -61,6 +63,8 @@ export default function Fantasy({ lineups, setLineups }: Props) {
           setOpenId(l.id);
         }}
       />
+
+      <ProjectionReport lineups={lineups} />
 
       {sorted.length === 0 && <div className="empty">No lineups yet. Pick a contest format and start one.</div>}
 
@@ -247,6 +251,7 @@ function Editor({ lineup: l, onChange }: { lineup: Lineup; onChange: (p: Partial
         )}
         {t.scored && <span className="muted">{t.perK.toFixed(2)} pts per $1K salary</span>}
       </div>
+      {l.slateId && <LateSwap lineup={l} setSlot={setSlot} />}
       {fillMsg && <p className="muted small">{fillMsg}</p>}
 
       <div className="grid3">
@@ -274,6 +279,77 @@ function Editor({ lineup: l, onChange }: { lineup: Lineup; onChange: (p: Partial
         <span>Notes</span>
         <textarea rows={3} value={l.notes ?? ''} onChange={(e) => onChange({ notes: e.target.value })} placeholder="Stacks, injury checks, lessons learned…" />
       </label>
+    </div>
+  );
+}
+
+const SWAP_LABEL: Record<SwapCheck['state'], string> = {
+  ok: 'Good to go',
+  locked: 'Locked',
+  out: 'Ruled out',
+  questionable: 'Questionable',
+  unknown: 'Unknown',
+};
+
+/** Checks a generated lineup for players ruled out before their games and offers the best replacement. */
+function LateSwap({ lineup: l, setSlot }: { lineup: Lineup; setSlot: (i: number, patch: Partial<Slot>) => void }) {
+  const [checks, setChecks] = useState<SwapCheck[] | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const run = async () => {
+    setBusy(true);
+    try {
+      const r = await checkLateSwap(l);
+      setChecks(r.checks);
+      setNote(r.note ?? null);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const problems = checks?.filter((c) => c.state === 'out' || c.state === 'questionable') ?? [];
+  return (
+    <div className="lateswap">
+      <div className="row">
+        <button className="btn" onClick={run} disabled={busy}>
+          {busy ? 'Checking news…' : 'Check late swaps'}
+        </button>
+        {checks && !problems.length && <span className="pos small">Everyone's still in. {checks.filter((c) => c.state === 'locked').length} already locked.</span>}
+      </div>
+      {note && <p className="muted small">{note}</p>}
+      {problems.length > 0 && (
+        <ul className="rlist">
+          {problems.map((c) => (
+            <li key={c.index} className="swaprow">
+              <span>
+                <b>{c.slot}</b> {c.player} <span className={`pill ${c.state === 'out' ? 'lost' : 'pending'}`}>{SWAP_LABEL[c.state]}</span>
+                <small className="muted"> {c.reason}</small>
+                {c.suggestion ? (
+                  <small>
+                    {' '}
+                    → {c.suggestion.name} ({c.suggestion.team}, {money(c.suggestion.salary)}, proj {c.suggestion.proj.toFixed(1)})
+                  </small>
+                ) : (
+                  <small className="muted"> → no replacement fits the remaining salary</small>
+                )}
+              </span>
+              {c.suggestion && (
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    const p = c.suggestion!;
+                    setSlot(c.index, { player: p.name, team: p.opp ? `${p.team} vs ${p.opp}` : p.team, salary: p.salary, points: null });
+                    setChecks((prev) => prev?.map((x) => (x.index === c.index ? { ...x, state: 'ok', player: p.name, suggestion: undefined, reason: 'Swapped in' } : x)) ?? null);
+                  }}
+                >
+                  Swap in
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

@@ -16,6 +16,7 @@ import type { Lineup } from '../fantasy';
 import { fmtDate, useStored } from '../store';
 import LiveSweat from './LiveSweat';
 import ReportCard from './ReportCard';
+import AlertsToggle from './AlertsToggle';
 
 export interface Settings {
   unitSize: number; // dollars per unit; 0 = not set
@@ -114,6 +115,7 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
         </button>
       </div>
 
+      <AlertsToggle />
       <LiveSweat bets={bets} />
 
       <div className="stats">

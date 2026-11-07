@@ -34,6 +34,8 @@ export interface Odds {
   homeSpread?: Price;
   over?: Price;
   under?: Price;
+  /** Opening numbers, for line movement. */
+  open?: { awayML?: number; homeML?: number; homeSpread?: number; total?: number };
 }
 
 export interface Game {
@@ -46,6 +48,11 @@ export interface Game {
   period?: number;
   clock?: string; // "4:12"
   venue?: string;
+  venueCity?: string;
+  venueState?: string;
+  indoor?: boolean;
+  /** ESPN's forecast summary for the venue (NFL/CFB), e.g. "Mostly sunny", 63°. */
+  weather?: { text: string; temp?: number };
   broadcast?: string;
   away: Side;
   home: Side;
@@ -90,6 +97,13 @@ function parseOdds(o: Json): Odds | undefined {
     odds.over = { line: total, odds: parseAmerican(ov?.odds) };
     odds.under = { line: total, odds: parseAmerican(un?.odds) };
   }
+  const opened = (side: Json) => side?.open;
+  odds.open = {
+    awayML: parseAmerican(opened(o.moneyline?.away)?.odds),
+    homeML: parseAmerican(opened(o.moneyline?.home)?.odds),
+    homeSpread: parseLine(opened(o.pointSpread?.home)?.line),
+    total: parseLine(opened(o.total?.over)?.line),
+  };
   // Older feeds only carry "details" like "POR -6.5"; fall back to that for the spread.
   if (!odds.awaySpread && typeof o.spread === 'number') {
     const favHome = o.homeTeamOdds?.favorite;
@@ -127,6 +141,10 @@ function parseEvent(league: LeagueKey, e: Json): Game {
     period: status.period,
     clock: status.displayClock,
     venue: comp.venue?.fullName,
+    venueCity: comp.venue?.address?.city,
+    venueState: comp.venue?.address?.state,
+    indoor: comp.venue?.indoor,
+    weather: comp.weather?.displayValue ? { text: comp.weather.displayValue, temp: comp.weather.temperature } : undefined,
     broadcast: comp.broadcasts?.flatMap((b: Json) => b.names ?? []).join(', ') || undefined,
     away: parseSide(away),
     home: parseSide(home),

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchScoreboard, LEAGUE_KEYS, LEAGUES, type Game, type LeagueKey } from '../espn';
-import { breakEven, fmtAmerican, fmtPct, type Leg } from '../bets';
+import { breakEven, fmtAmerican, fmtPct, kellyUnits, type Leg } from '../bets';
 import {
   buildParlay,
   candidateLabel,
@@ -230,6 +230,7 @@ export default function PropBuilder({ setSlip }: Props) {
                   <LegRow key={c.key} c={c} action={<button className="btn ghost sm" onClick={() => swap(c)}>Swap</button>} />
                 ))}
               </ul>
+              <StakeNote p={parlay.est} odds={parlay.odds} />
               {new Set(parlay.legs.map((l) => l.game.id)).size < parlay.legs.length && (
                 <p className="warn small">
                   Includes same-game legs. Sportsbooks reprice those, so your book's price may be shorter than {fmtAmerican(parlay.odds)}.
@@ -304,8 +305,25 @@ function LegRow({ c, action }: { c: Candidate; action: React.ReactNode }) {
       </div>
       <div className="pside">
         <b>{fmtAmerican(c.odds)}</b>
+        {kellyUnits(c.est, c.odds) > 0 && <small className="muted">stake {kellyUnits(c.est, c.odds)}u</small>}
         {action}
       </div>
     </li>
+  );
+}
+
+/** Quarter-Kelly stake for a whole parlay, from the product of its leg estimates. */
+export function StakeNote({ p, odds }: { p: number; odds: number }) {
+  const u = kellyUnits(p, odds);
+  return (
+    <p className="muted small stakenote">
+      {u > 0 ? (
+        <>
+          Suggested stake: <b>{u}u</b> (a cautious Kelly: half the model's edge, an eighth of the Kelly stake, at most 3% of bankroll). Set your bankroll in Bets to size it to you.
+        </>
+      ) : (
+        <>The estimate doesn't beat this price, so Kelly says no bet. If you play it, keep it small.</>
+      )}
+    </p>
   );
 }

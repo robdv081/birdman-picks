@@ -24,7 +24,7 @@ function count(path: string, title?: string, event = false) {
 }
 
 function trackView() {
-  const section = location.hash.replace('#', '') || 'nba';
+  const section = location.hash.replace('#', '') || 'today';
   count(`/${section}`, `Birdman Picks: ${section}`);
 }
 

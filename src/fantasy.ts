@@ -38,6 +38,9 @@ export interface Lineup {
   notes?: string;
   entryFee?: number | null;
   winnings?: number | null;
+  /** Set when the generator built it: the projection at the time, and the slate it came from. */
+  projected?: number;
+  slateId?: string;
 }
 
 export const templateFor = (id: string) => TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];

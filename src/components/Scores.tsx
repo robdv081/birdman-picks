@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from 'react';
 import { fetchInjuries, fetchScoreboard, LEAGUE_KEYS, LEAGUES, type Game, type Injury, type LeagueKey, type Side } from '../espn';
 import { breakEven, fmtAmerican, fmtLine, fmtPct, type Bet, type BetSide, type Market } from '../bets';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
+import { lineMoves } from '../movement';
+import { gameWeather, passGameFactor, weatherNote, type GameWeather } from '../weather';
 import LiveSweat from './LiveSweat';
 
 interface Props {
@@ -156,6 +158,16 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
   const matchup = `${g.away.abbr} @ ${g.home.abbr}`;
   const winner = g.completed && g.away.score != null && g.home.score != null ? (g.away.score > g.home.score ? 'away' : g.home.score > g.away.score ? 'home' : null) : null;
   const time = new Date(g.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const moves = g.state === 'pre' ? lineMoves(g) : [];
+  const [wx, setWx] = useState<GameWeather | null>(null);
+  useEffect(() => {
+    let live = true;
+    gameWeather(g).then((w) => live && setWx(w));
+    return () => {
+      live = false;
+    };
+  }, [g.id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const wxNote = weatherNote(wx);
 
   const track = (market: Market, side: BetSide, odds: number | undefined, line: number | undefined, selection: string) =>
     onTrack({
@@ -251,6 +263,23 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
       </div>
       {row('away', g.away)}
       {row('home', g.home)}
+      {(moves.length > 0 || wxNote || (g.indoor && (g.league === 'nfl' || g.league === 'cfb'))) && (
+        <div className="gnotes">
+          {moves.length > 0 && (
+            <span>
+              {moves.some((m) => m.big) && <span className="pill tracked">Big move</span>} Opened: {moves.map((m) => m.text).join(' · ')}
+            </span>
+          )}
+          {wxNote && (
+            <span className={passGameFactor(wx) < 1 ? 'inj' : ''}>
+              {g.weather?.text ? `${g.weather.text} · ` : ''}
+              {wxNote}
+              {passGameFactor(wx) < 1 ? ' · tough passing conditions' : ''}
+            </span>
+          )}
+          {g.indoor && (g.league === 'nfl' || g.league === 'cfb') && <span>Indoors</span>}
+        </div>
+      )}
       <div className="gfoot">
         <span>{[g.venue, g.broadcast].filter(Boolean).join(' · ')}</span>
         <span className="spacer" />
