@@ -3,6 +3,7 @@ import { fetchSummary, type Game, type GameSummary, type Injury } from '../espn'
 import type { Bet } from '../bets';
 import { fantasyPoints } from '../stats';
 import { injuryRipple, type Ripple } from '../ripple';
+import { LineShopGame } from './LineShop';
 
 function RipplePanel({ teamId, gameId, player }: { teamId: string; gameId?: string; player: string }) {
   const [r, setR] = useState<Ripple | null>(null);
@@ -152,6 +153,8 @@ export default function GameDetails({ game: g, date, onClose, onTrack }: Props) 
             + Track a player prop
           </button>
         )}
+
+        <LineShopGame game={g} />
 
         <div className="chips small">
           {hasBox && (

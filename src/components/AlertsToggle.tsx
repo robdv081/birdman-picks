@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { alertStatus, disableAlerts, enableAlerts, notify, type AlertSupport } from '../alerts';
+import { redZoneOn, setRedZoneOn } from '../redzone';
 
 const isIos = /iPhone|iPad|iPod/.test(navigator.userAgent);
 const installed = window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true;
 
 export default function AlertsToggle() {
   const [status, setStatus] = useState<AlertSupport>(alertStatus);
+  const [rz, setRz] = useState(redZoneOn);
 
   if (status === 'unsupported')
     return (
@@ -34,6 +36,17 @@ export default function AlertsToggle() {
           >
             Turn off
           </button>
+          <label className="small rztoggle">
+            <input
+              type="checkbox"
+              checked={rz}
+              onChange={(e) => {
+                setRedZoneOn(e.target.checked);
+                setRz(e.target.checked);
+              }}
+            />{' '}
+            🚨 Red Zone alerts for football games you bet or star
+          </label>
         </>
       ) : (
         <button

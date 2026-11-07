@@ -4,6 +4,7 @@ import { breakEven, fmtAmerican, fmtLine, fmtPct, type Bet, type BetSide, type M
 import { fmtDate, shiftYMD, todayYMD } from '../store';
 import { lineMoves } from '../movement';
 import { gameWeather, passGameFactor, weatherNote, type GameWeather } from '../weather';
+import { useStars } from '../redzone';
 import LiveSweat from './LiveSweat';
 import Leaderboard from './Leaderboard';
 
@@ -206,6 +207,10 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
     };
   }, [g.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const wxNote = weatherNote(wx);
+  const football = g.league === 'nfl' || g.league === 'cfb';
+  const { isStarred, toggle } = useStars();
+  const starred = isStarred(g.id);
+  const sit = g.state === 'in' ? g.situation : undefined;
 
   const L = o?.links;
   const linkFor = (market: Market, side: BetSide) =>
@@ -304,6 +309,18 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
           {g.state === 'pre' ? time : g.detail}
           {g.note && <span className="muted gnote"> · {g.note}</span>}
           {tracked && <span className="pill tracked">Tracked</span>}
+          {sit?.redZone && <span className="pill redzone">Red Zone</span>}
+          {football && g.state !== 'post' && (
+          <button
+            className={`star ${starred ? 'on' : ''}`}
+            aria-pressed={starred}
+            aria-label={starred ? 'Stop Red Zone alerts for this game' : 'Get Red Zone alerts for this game'}
+            title={starred ? 'Red Zone alerts on' : 'Red Zone alerts'}
+            onClick={() => toggle({ id: g.id, league: g.league, date })}
+          >
+            {starred ? '★' : '☆'}
+          </button>
+          )}
         </span>
         {o && (
           <span className="cols">
@@ -313,6 +330,12 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
           </span>
         )}
       </div>
+      {sit && (sit.text || sit.possession) && (
+        <div className={`situation ${sit.redZone ? 'rz' : ''}`}>
+          {sit.possession && <b>{sit.possession} ball</b>}
+          {sit.text && <span>{sit.text}</span>}
+        </div>
+      )}
       {row('away', g.away)}
       {row('home', g.home)}
       {o?.draw != null && (

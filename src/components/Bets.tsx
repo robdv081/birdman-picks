@@ -18,10 +18,13 @@ import { fmtDate, useStored } from '../store';
 import LiveSweat from './LiveSweat';
 import ReportCard from './ReportCard';
 import AlertsToggle from './AlertsToggle';
+import { HELPLINE, stakedThisWeek } from '../guard';
 
 export interface Settings {
   unitSize: number; // dollars per unit; 0 = not set
   startBankroll?: number;
+  /** Most units to put in play in a week (Monday to Sunday); 0 or missing = no limit. */
+  weeklyLimit?: number;
 }
 
 interface Props {
@@ -165,6 +168,8 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
             : 'Set a unit size to see profit in dollars.'}
         </p>
       </div>
+
+      <WeeklyLimit bets={bets} settings={settings} setSettings={setSettings} unit={unit} parse={numOrUndef} />
 
       <ProfitChart bets={bets} unit={unit} />
 
@@ -363,6 +368,59 @@ function ProfitChart({ bets, unit }: { bets: Bet[]; unit: number }) {
         <line x1="0" x2={W} y1={y(0)} y2={y(0)} className="zero" />
         <path d={d} className={up ? 'line pos' : 'line neg'} vectorEffect="non-scaling-stroke" />
       </svg>
+    </div>
+  );
+}
+
+function WeeklyLimit({
+  bets,
+  settings,
+  setSettings,
+  unit,
+  parse,
+}: {
+  bets: Bet[];
+  settings: Settings;
+  setSettings: (fn: (p: Settings) => Settings) => void;
+  unit: number;
+  parse: (v: string) => number | undefined;
+}) {
+  const limit = settings.weeklyLimit ?? 0;
+  const used = stakedThisWeek(bets);
+  const pct = limit ? Math.min(1, used / limit) : 0;
+  const tone = !limit ? '' : used > limit ? 'neg' : pct >= 0.8 ? 'warnc' : 'pos';
+  const money = (u: number) => (unit > 0 ? ` (${fmtMoney(u * unit)})` : '');
+  return (
+    <div className="card guard">
+      <div className="row between">
+        <b>Weekly limit</b>
+        <label className="field inline">
+          <input
+            inputMode="decimal"
+            placeholder="units"
+            aria-label="Weekly limit in units"
+            defaultValue={limit || ''}
+            onBlur={(e) => setSettings((p) => ({ ...p, weeklyLimit: parse(e.target.value) ?? 0 }))}
+          />
+          <span className="muted small">units / week</span>
+        </label>
+      </div>
+      {limit > 0 ? (
+        <>
+          <div className={`meter ${tone}`} role="progressbar" aria-valuemin={0} aria-valuemax={limit} aria-valuenow={used}>
+            <i style={{ width: `${pct * 100}%` }} />
+          </div>
+          <p className="small">
+            <b className={tone}>{used.toFixed(1)}u</b> of {limit}u in play since Monday{money(used)}.{' '}
+            {used > limit ? 'You\u2019re over your limit this week.' : `${(limit - used).toFixed(1)}u left${money(limit - used)}.`}
+          </p>
+        </>
+      ) : (
+        <p className="muted small">Set a weekly limit and the app warns you before a bet takes you past it. Resets every Monday.</p>
+      )}
+      <p className="muted small">
+        Betting should stay fun. If it isn't, call {HELPLINE} for free, confidential help, any time.
+      </p>
     </div>
   );
 }

@@ -14,8 +14,13 @@ import GameDetails from './components/GameDetails';
 import ParlaySlip from './components/ParlaySlip';
 import PropBuilder from './components/PropBuilder';
 import Today from './components/Today';
+import Record from './components/Record';
+import Pickem from './components/Pickem';
+import RedZoneBar from './components/RedZoneBar';
+import { useRedZone } from './redzone';
+import { HELPLINE } from './guard';
 
-type Route = { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' };
+type Route = { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
 
 function parseHash(): Route {
   const h = location.hash.replace('#', '');
@@ -23,6 +28,8 @@ function parseHash(): Route {
   if (h === 'props') return { view: 'props' };
   if (h === 'bets') return { view: 'bets' };
   if (h === 'fantasy') return { view: 'fantasy' };
+  if (h === 'record') return { view: 'record' };
+  if (h === 'pickem') return { view: 'pickem' };
   return { view: 'scores', league: (LEAGUE_KEYS as string[]).includes(h) ? (h as LeagueKey) : 'nba' };
 }
 
@@ -105,6 +112,7 @@ export default function App() {
 
   useAutoGrade(bets, setBets);
   useCloseCapture(bets, setBets);
+  const liveFootball = useRedZone(bets);
 
   const saveBet = (b: Bet) => {
     setBets((prev) => (prev.some((x) => x.id === b.id) ? prev.map((x) => (x.id === b.id ? b : x)) : [b, ...prev]));
@@ -146,10 +154,17 @@ export default function App() {
           <a className={route.view === 'fantasy' ? 'on' : ''} href="#fantasy">
             Fantasy
           </a>
+          <a className={route.view === 'record' ? 'on' : ''} href="#record">
+            Record
+          </a>
+          <a className={route.view === 'pickem' ? 'on' : ''} href="#pickem">
+            Pick'em
+          </a>
         </nav>
       </header>
 
       <main className="content">
+        <RedZoneBar games={liveFootball} />
         {route.view === 'today' && <Today bets={bets} setSlip={setSlip} />}
         {route.view === 'scores' && (
           <Scores
@@ -164,10 +179,13 @@ export default function App() {
           <Bets bets={bets} setBets={setBets} lineups={lineups} setLineups={setLineups} onEdit={(b) => setDraft(b ?? {})} />
         )}
         {route.view === 'fantasy' && <Fantasy lineups={lineups} setLineups={setLineups} />}
+        {route.view === 'record' && <Record />}
+        {route.view === 'pickem' && <Pickem />}
       </main>
 
       <footer className="foot">
-        Scores, odds and injuries from ESPN's public feed and may be delayed. This app tracks picks and hands them to DraftKings or FanDuel; it never places bets itself.
+        Scores, odds and injuries from ESPN's public feed and may be delayed. This app tracks picks and hands them to DraftKings or FanDuel; it never places bets itself. 21+ only where sports betting is legal.
+        Gambling problem? Call {HELPLINE}.
       </footer>
 
       {details && (
@@ -181,6 +199,7 @@ export default function App() {
       {draft && (
         <BetModal
           draft={draft}
+          bets={bets}
           slipCount={slip.length}
           onSave={saveBet}
           onAddLeg={addLeg}
@@ -188,7 +207,7 @@ export default function App() {
           onClose={() => setDraft(null)}
         />
       )}
-      {slip.length > 0 && <ParlaySlip slip={slip} setSlip={setSlip} onSave={(b) => saveBet(b)} />}
+      {slip.length > 0 && <ParlaySlip slip={slip} bets={bets} setSlip={setSlip} onSave={(b) => saveBet(b)} />}
     </div>
   );
 }

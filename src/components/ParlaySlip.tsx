@@ -2,14 +2,16 @@ import { useState } from 'react';
 import { breakEven, fmtAmerican, fmtPct, newId, parlayOdds, toDecimal, type Bet, type Leg } from '../bets';
 import { StakeNote } from './PropBuilder';
 import SendToBook from './SendToBook';
+import { checkStake, HELPLINE } from '../guard';
 
 interface Props {
   slip: Leg[];
+  bets: Bet[];
   setSlip: (fn: Leg[] | ((prev: Leg[]) => Leg[])) => void;
   onSave: (b: Bet) => void;
 }
 
-export default function ParlaySlip({ slip, setSlip, onSave }: Props) {
+export default function ParlaySlip({ slip, bets, setSlip, onSave }: Props) {
   const [open, setOpen] = useState(false);
   const computed = parlayOdds(slip);
   const [override, setOverride] = useState('');
@@ -21,9 +23,11 @@ export default function ParlaySlip({ slip, setSlip, onSave }: Props) {
   const priceOk = Number.isInteger(price) && Math.abs(price) >= 100;
   const u = Number(stake.trim());
   const ok = slip.length >= 2 && priceOk && Number.isFinite(u) && u > 0;
+  const guard = ok ? checkStake(bets, u) : null;
 
   const save = () => {
     if (!ok) return;
+    if (guard?.over && !confirm(`This takes you to ${guard.after.toFixed(1)}u this week, over your ${guard.limit}u limit. Track it anyway?`)) return;
     const dates = slip.map((l) => l.date).sort();
     onSave({
       id: newId(),
@@ -94,6 +98,12 @@ export default function ParlaySlip({ slip, setSlip, onSave }: Props) {
           </p>
         )}
 
+        {guard?.over && (
+          <p className="warn">
+            Over your weekly limit: this makes <b>{guard.after.toFixed(1)}u</b> in play this week against your {guard.limit}u limit. Need a break? {HELPLINE} is
+            free and confidential.
+          </p>
+        )}
         {ok && slip.every((l) => l.est != null) && <StakeNote p={slip.reduce((x, l) => x * l.est!, 1)} odds={price} />}
         {slip.length > 0 && <SendToBook picks={slip} title={`${slip.length}-leg parlay`} />}
         <div className="actions">

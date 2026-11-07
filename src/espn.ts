@@ -122,6 +122,28 @@ export interface Game {
   link?: string;
   /** Weight class or tournament round, for fights and tennis. */
   note?: string;
+  /** Live football: who has the ball, down and distance, and whether they're inside the 20. */
+  situation?: Situation;
+}
+
+export interface Situation {
+  redZone: boolean;
+  /** e.g. "2nd & 7 at KC 14" */
+  text?: string;
+  /** Abbreviation of the team with the ball. */
+  possession?: string;
+  /** ESPN's latest play, when given. */
+  lastPlay?: string;
+}
+
+/** Football's live situation block; only meaningful while the game is in progress. */
+export function parseSituation(s: Json, away: Side, home: Side, live: boolean): Situation | undefined {
+  if (!live || !s || typeof s !== 'object') return undefined;
+  const pid = s.possession != null ? String(s.possession) : '';
+  const possession = pid === away.id ? away.abbr : pid === home.id ? home.abbr : undefined;
+  const text: string | undefined = s.downDistanceText || s.shortDownDistanceText || undefined;
+  if (!possession && !text && s.isRedZone == null) return undefined;
+  return { redZone: s.isRedZone === true, text, possession, lastPlay: s.lastPlay?.text || undefined };
 }
 
 export function parseAmerican(s: unknown): number | undefined {
@@ -222,9 +244,13 @@ function parseEvent(league: LeagueKey, e: Json): Game {
   const away = comp.competitors?.find((c: Json) => c.homeAway === 'away');
   const home = comp.competitors?.find((c: Json) => c.homeAway === 'home');
   const status = comp.status ?? e.status ?? {};
+  const awaySide = parseSide(away);
+  const homeSide = parseSide(home);
+  const football = LEAGUES[league].group === 'Football';
   return {
     id: String(e.id),
     league,
+    situation: football ? parseSituation(comp.situation, awaySide, homeSide, status.type?.state === 'in') : undefined,
     start: e.date,
     state: status.type?.state ?? 'pre',
     completed: !!status.type?.completed,
@@ -237,8 +263,8 @@ function parseEvent(league: LeagueKey, e: Json): Game {
     indoor: comp.venue?.indoor,
     weather: comp.weather?.displayValue ? { text: comp.weather.displayValue, temp: comp.weather.temperature } : undefined,
     broadcast: comp.broadcasts?.flatMap((b: Json) => b.names ?? []).join(', ') || undefined,
-    away: parseSide(away),
-    home: parseSide(home),
+    away: awaySide,
+    home: homeSide,
     odds: parseOdds(comp.odds?.[0]),
     link: e.links?.find((l: Json) => l.rel?.includes('summary'))?.href ?? e.links?.[0]?.href,
   };

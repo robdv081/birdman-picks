@@ -17,9 +17,14 @@ import { PROP_STATS } from '../stats';
 import { load, todayYMD } from '../store';
 import type { Settings } from './Bets';
 import SendToBook from './SendToBook';
+import { LineShopPick } from './LineShop';
+import { checkStake, HELPLINE } from '../guard';
+import { ownerKey, postRecordPick, serverReady } from '../server';
 
 interface Props {
   draft: Partial<Bet>;
+  /** Everything tracked so far, for the weekly limit. */
+  bets: Bet[];
   slipCount: number;
   onSave: (b: Bet) => void;
   onAddLeg: (l: Leg) => void;
@@ -29,7 +34,7 @@ interface Props {
 
 const STATUSES: BetStatus[] = ['pending', 'won', 'lost', 'push', 'void'];
 
-export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete, onClose }: Props) {
+export default function BetModal({ draft, bets, slipCount, onSave, onAddLeg, onDelete, onClose }: Props) {
   const editing = !!draft.id;
   const linked = !!draft.eventId;
   const isParlay = !!draft.legs;
@@ -48,6 +53,8 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
   const [side, setSide] = useState<BetSide>(draft.side ?? 'over');
   const [line, setLine] = useState(draft.line != null ? String(draft.line) : '');
   const unit = load<Settings>('bp.settings', { unitSize: 0 }).unitSize;
+  const owner = serverReady() && !!ownerKey();
+  const canPost = linked && !isParlay && !editing && ['ml', 'spread', 'total', 'prop'].includes(draft.market ?? '');
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -66,6 +73,9 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
   const u = Number(stake.trim());
   const stakeOk = Number.isFinite(u) && u > 0;
   const valid = !!label && oddsOk && propOk;
+  // Weekly limit: only new bets, or edits that raise the stake, count against it.
+  const guard = stakeOk && status === 'pending' ? checkStake(bets, u, draft.id) : null;
+  const overLimit = !!guard?.over && (!editing || u > (draft.stake ?? 0));
 
   const selectionFields = () => ({
     ...(linkedProp ? { player: player.trim(), stat, side, line: lineNum } : {}),
@@ -78,6 +88,7 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!valid || !stakeOk) return;
+    if (overLimit && !confirm(`This takes you to ${guard!.after.toFixed(1)}u this week, over your ${guard!.limit}u limit. Track it anyway?`)) return;
     onSave({
       ...(draft as Bet),
       ...selectionFields(),
@@ -202,6 +213,22 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
           </label>
         </div>
 
+        {oddsOk && linked && !isParlay && (
+          <LineShopPick league={draft.league} eventId={draft.eventId} market={market} side={draft.side} line={draft.line} odds={a} />
+        )}
+
+        {overLimit && (
+          <p className="warn">
+            Over your weekly limit: this makes <b>{guard!.after.toFixed(1)}u</b> in play this week against your {guard!.limit}u limit. Need a break? {HELPLINE}{' '}
+            is free and confidential.
+          </p>
+        )}
+        {!overLimit && guard && guard.after >= guard.limit * 0.8 && (
+          <p className="muted small">
+            {guard.after.toFixed(1)}u of your {guard.limit}u weekly limit with this bet.
+          </p>
+        )}
+
         {oddsOk && stakeOk && (
           <p className="calc">
             To win <b>{(u * (toDecimal(a) - 1)).toFixed(2)}u</b>
@@ -210,9 +237,27 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
         )}
 
         <label className="field">
-          <span>Notes</span>
+          <span>{owner && canPost ? 'Notes (also "Why I like it" on your record)' : 'Notes'}</span>
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reasoning, injury notes…" />
         </label>
+
+        {owner && canPost && valid && stakeOk && (
+          <PostToRecord
+            pick={{
+              league: draft.league!,
+              eventId: draft.eventId!,
+              date,
+              market,
+              side: linkedProp ? side : draft.side!,
+              line: linkedProp ? lineNum : draft.line,
+              odds: a,
+              units: u,
+              reason: notes.trim(),
+              player: linkedProp ? player.trim() : undefined,
+              stat: linkedProp ? stat : undefined,
+            }}
+          />
+        )}
 
         {valid && status === 'pending' && (
           <SendToBook picks={isParlay ? draft.legs ?? [] : [{ ...(draft as Bet), ...selectionFields() }]} title={isParlay ? label : undefined} />
@@ -241,3 +286,32 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
     </div>
   );
 }
+
+/** Owner only: put this pick on the public, locked record. */
+function PostToRecord({ pick }: { pick: Parameters<typeof postRecordPick>[0] }) {
+  const [state, setState] = useState<'idle' | 'posting' | 'done'>('idle');
+  const [msg, setMsg] = useState<string | null>(null);
+  const post = async () => {
+    if (!confirm(`Post ${fmtUnitsShort(pick.units)} on this pick to your public record? It locks now and can't be edited or deleted.`)) return;
+    setState('posting');
+    setMsg(null);
+    try {
+      const r = await postRecordPick(pick);
+      setState('done');
+      setMsg(`Posted as pick #${r.pick.seq}.`);
+    } catch (e) {
+      setState('idle');
+      setMsg((e as Error).message);
+    }
+  };
+  return (
+    <div className="postrecord">
+      <button type="button" className="btn gold" disabled={state !== 'idle'} onClick={post}>
+        {state === 'posting' ? 'Posting…' : state === 'done' ? 'On your record ✓' : 'Post to my record'}
+      </button>
+      <small className="muted">{msg ?? 'Locks it with a timestamp. Your notes show as "Why I like it".'}</small>
+    </div>
+  );
+}
+
+const fmtUnitsShort = (u: number) => `${u}u`;

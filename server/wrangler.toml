@@ -1,0 +1,18 @@
+# Birdman Picks server. Deployed by .github/workflows/server.yml, or by hand with `npx wrangler deploy`.
+name = "birdman-picks"
+main = "index.ts"
+compatibility_date = "2026-11-01"
+
+[vars]
+ALLOWED_ORIGIN = "https://robdv081.github.io"
+APP_URL = "https://robdv081.github.io/birdman-picks/"
+
+# Grade picks and record closing lines every 5 minutes.
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Create once with `npx wrangler d1 create birdman`, then paste the id it prints here.
+[[d1_databases]]
+binding = "DB"
+database_name = "birdman"
+database_id = "PASTE_DATABASE_ID_HERE"

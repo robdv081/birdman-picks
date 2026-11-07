@@ -1,0 +1,14 @@
+{
+  "name": "birdman-picks-server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node scripts/test.mjs",
+    "deploy": "wrangler deploy",
+    "db:init": "wrangler d1 execute birdman --remote --file=schema.sql"
+  },
+  "devDependencies": {
+    "esbuild": "0.21.5",
+    "wrangler": "^4"
+  }
+}

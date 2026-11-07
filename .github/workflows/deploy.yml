@@ -31,6 +31,9 @@ jobs:
       # A failed sync shouldn't block a deploy; the generator then says salaries are unavailable.
       - run: npm run salaries || echo "Salary sync failed; deploying without fresh salaries"
       - run: npm run build
+        env:
+          # The Birdman server's address (Settings → Secrets and variables → Actions → Variables).
+          VITE_SERVER_URL: ${{ vars.SERVER_URL }}
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
