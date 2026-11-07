@@ -2,8 +2,9 @@
 import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDB } from './d1shim.mjs';
+import { pathToFileURL } from 'node:url';
 
-const W = await import(process.env.WORKER_BUNDLE);
+const W = await import(pathToFileURL(process.env.WORKER_BUNDLE).href);
 const { handle, settleAll } = W;
 const { pickHash, lockedFields, GENESIS } = W;
 
