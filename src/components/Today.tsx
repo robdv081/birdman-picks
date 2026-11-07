@@ -10,6 +10,7 @@ import { SPORT_LABEL } from '../dfs';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
 import LiveSweat from './LiveSweat';
 import AlertsToggle from './AlertsToggle';
+import { ProGate } from './Pro';
 
 const MOVE_LEAGUES: LeagueKey[] = ['nfl', 'cfb', 'nba', 'mcbb', 'nhl', 'mlb'];
 const time = (iso: string) => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -98,7 +99,9 @@ export default function Today({ bets, setSlip }: { bets: Bet[]; setSlip: (fn: (p
         </div>
       </div>
 
-      <BestEdges games={games} setSlip={setSlip} />
+      <ProGate feature="Best edges today" blurb="Scans tonight's props and college lines for prices the numbers say are off, ranked by edge with a stake size.">
+        <BestEdges games={games} setSlip={setSlip} />
+      </ProGate>
       <FantasyValues />
     </section>
   );

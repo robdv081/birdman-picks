@@ -19,6 +19,8 @@ import Pickem from './components/Pickem';
 import RedZoneBar from './components/RedZoneBar';
 import { useRedZone } from './redzone';
 import { HELPLINE } from './guard';
+import { ProGate, ProNotice } from './components/Pro';
+import { startPro } from './pro';
 
 type Route = { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
 
@@ -113,6 +115,7 @@ export default function App() {
   useAutoGrade(bets, setBets);
   useCloseCapture(bets, setBets);
   const liveFootball = useRedZone(bets);
+  useEffect(startPro, []);
 
   const saveBet = (b: Bet) => {
     setBets((prev) => (prev.some((x) => x.id === b.id) ? prev.map((x) => (x.id === b.id ? b : x)) : [b, ...prev]));
@@ -164,6 +167,7 @@ export default function App() {
       </header>
 
       <main className="content">
+        <ProNotice />
         <RedZoneBar games={liveFootball} />
         {route.view === 'today' && <Today bets={bets} setSlip={setSlip} />}
         {route.view === 'scores' && (
@@ -174,7 +178,11 @@ export default function App() {
             onDetails={(game, date) => setDetails({ game, date })}
           />
         )}
-        {route.view === 'props' && <PropBuilder setSlip={setSlip} />}
+        {route.view === 'props' && (
+          <ProGate feature="Prop parlay builder" blurb="Build player-prop parlays from tonight's lines with each player's hit rate, a fair price and a suggested stake.">
+            <PropBuilder setSlip={setSlip} />
+          </ProGate>
+        )}
         {route.view === 'bets' && (
           <Bets bets={bets} setBets={setBets} lineups={lineups} setLineups={setLineups} onEdit={(b) => setDraft(b ?? {})} />
         )}

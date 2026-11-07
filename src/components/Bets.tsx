@@ -19,6 +19,7 @@ import LiveSweat from './LiveSweat';
 import ReportCard from './ReportCard';
 import AlertsToggle from './AlertsToggle';
 import { HELPLINE, stakedThisWeek } from '../guard';
+import { ProCard, ProGate } from './Pro';
 
 export interface Settings {
   unitSize: number; // dollars per unit; 0 = not set
@@ -169,6 +170,8 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
         </p>
       </div>
 
+      <ProCard />
+
       <WeeklyLimit bets={bets} settings={settings} setSettings={setSettings} unit={unit} parse={numOrUndef} />
 
       <ProfitChart bets={bets} unit={unit} />
@@ -214,7 +217,9 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
         </div>
       )}
 
-      <ReportCard bets={bets} />
+      <ProGate feature="Report card" blurb="Closing line value, how your parlays die, and which bet types make or cost you money.">
+        <ReportCard bets={bets} />
+      </ProGate>
 
       <div className="chips small">
         {(['all', 'pending', 'settled'] as Filter[]).map((f) => (
