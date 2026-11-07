@@ -167,7 +167,7 @@ export default function App() {
       </main>
 
       <footer className="foot">
-        Scores, odds and injuries from ESPN's public feed and may be delayed. This app tracks picks; it never places bets.
+        Scores, odds and injuries from ESPN's public feed and may be delayed. This app tracks picks and hands them to DraftKings or FanDuel; it never places bets itself.
       </footer>
 
       {details && (

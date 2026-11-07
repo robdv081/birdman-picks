@@ -10,20 +10,25 @@ export interface Move {
 }
 
 // What counts as a big move, per league: points of spread or total, or win probability on the moneyline.
-const BIG: Record<LeagueKey, { spread: number; total: number }> = {
+const BIG: Partial<Record<LeagueKey, { spread: number; total: number }>> = {
   nfl: { spread: 1.5, total: 2 },
   cfb: { spread: 2, total: 3 },
   nba: { spread: 2, total: 3 },
   nhl: { spread: 0.5, total: 0.5 },
   mlb: { spread: 0.5, total: 0.5 },
+  mcbb: { spread: 2, total: 3 },
+  wcbb: { spread: 2, total: 3 },
+  wnba: { spread: 2, total: 3 },
 };
+// Soccer and anything else: half a goal on the line counts as big.
+const BIG_DEFAULT = { spread: 0.5, total: 0.5 };
 const BIG_ML = 0.05;
 
 export function lineMoves(g: Game): Move[] {
   const o = g.odds;
   const open = o?.open;
   if (!o || !open) return [];
-  const t = BIG[g.league];
+  const t = BIG[g.league] ?? BIG_DEFAULT;
   const moves: Move[] = [];
 
   const hs = o.homeSpread?.line;

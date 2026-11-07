@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { newId } from '../bets';
 import { loadDkSlates, projectSlate, slateFromCsv, SPORT_LABEL, type DfsPlayer, type Slate, type Sport } from '../dfs';
-import { TEMPLATES, type Lineup } from '../fantasy';
-import { dkUploadCsv, generate, type ContestStyle, type GenLineup } from '../generator';
+import { downloadFile, fileSlug, TEMPLATES, type Lineup } from '../fantasy';
+import { uploadFileCsv, generate, type ContestStyle, type GenLineup } from '../generator';
 import { RISK_LABEL } from '../optimizer';
 import { saveSnapshot } from '../snapshots';
 
@@ -134,7 +134,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
       date: slate.start?.slice(0, 10) ?? new Date().toISOString().slice(0, 10),
       templateId,
       cap: slate.cap,
-      slots: l.slots.map((s) => ({ slot: s.slot, player: s.player.name, team: s.player.opp ? `${s.player.team} vs ${s.player.opp}` : s.player.team, salary: s.player.salary, points: null })),
+      slots: l.slots.map((s) => ({ slot: s.slot, id: s.player.id, player: s.player.name, team: s.player.opp ? `${s.player.team} vs ${s.player.opp}` : s.player.team, salary: s.player.salary, points: null })),
       notes: `Generated (${style === 'gpp' ? 'tournament' : 'cash'}): projected ${l.proj.toFixed(1)}, ceiling ${l.ceiling.toFixed(1)}.`,
       projected: Math.round(l.proj * 10) / 10,
       slateId: snapId ?? undefined,
@@ -142,14 +142,12 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
     setSaved((prev) => new Set(prev).add(i));
   };
 
+  const hasIds = !!slate && slate.players.length > 0 && slate.players.every((p) => p.id && !/^p\d+$/.test(p.id));
+
   const download = () => {
     if (!slate || !lineups) return;
-    const blob = new Blob([dkUploadCsv(slate.slots, lineups)], { type: 'text/csv' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `draftkings-${slate.sport}-${slate.label.toLowerCase().replace(/\W+/g, '-')}-lineups.csv`;
-    a.click();
-    URL.revokeObjectURL(a.href);
+    const siteName = slate.site === 'dk' ? 'draftkings' : 'fanduel';
+    downloadFile(`${siteName}-${slate.sport}-${fileSlug(slate.label)}-lineups.csv`, uploadFileCsv(slate.slots, lineups));
   };
 
   const toggle = (set: Set<string>, setter: (s: Set<string>) => void, key: string, other?: [Set<string>, (s: Set<string>) => void]) => {
@@ -382,9 +380,9 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                   {lineups.length} lineup{lineups.length === 1 ? '' : 's'} · best {Math.max(...lineups.map((l) => l.proj)).toFixed(1)} pts
                 </b>
                 <div className="row">
-                  {slate.site === 'dk' && (
+                  {hasIds && (
                     <button className="btn" onClick={download}>
-                      Download for DraftKings upload
+                      Download for {slate.site === 'dk' ? 'DraftKings' : 'FanDuel'} upload
                     </button>
                   )}
                   <button className="btn ghost" onClick={() => lineups.forEach((l, i) => !saved.has(i) && save(l, i))}>
@@ -392,6 +390,10 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                   </button>
                 </div>
               </div>
+              {hasIds && <UploadHelp site={slate.site} />}
+              {!hasIds && slate.site === 'fd' && (
+                <p className="muted small">This player list has no FanDuel player ids, so it can't make an upload file. Use FanDuel's own "Download players list" CSV.</p>
+              )}
               {lineups.length < count && <p className="muted small">Only {lineups.length} distinct lineups fit these rules and exposure limits.</p>}
               <div className="genlist">
                 {lineups.map((l, i) => (
@@ -541,5 +543,20 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
         </>
       )}
     </section>
+  );
+}
+
+/** How to get an upload file onto each site. */
+export function UploadHelp({ site }: { site: 'dk' | 'fd' }) {
+  return site === 'dk' ? (
+    <p className="muted small">
+      On DraftKings (computer browser): open the contest, enter it, then go to <b>My Contests → Upcoming → Upload Lineups</b> and pick this file. The
+      phone app can't upload files.
+    </p>
+  ) : (
+    <p className="muted small">
+      On FanDuel (computer browser): open the contest, choose <b>Upload lineups</b> (or <b>Lineups → Upload</b>), and pick this file. It has to be the
+      same contest whose player list you pasted, since the ids belong to that slate.
+    </p>
   );
 }

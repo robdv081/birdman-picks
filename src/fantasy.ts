@@ -22,6 +22,8 @@ export const TEMPLATES: Template[] = [
 
 export interface Slot {
   slot: string;
+  /** The site's player id from the slate it was built on, for the upload file. */
+  id?: string;
   player: string;
   team: string;
   salary: number | null;
@@ -42,6 +44,29 @@ export interface Lineup {
   projected?: number;
   slateId?: string;
 }
+
+/** DraftKings and FanDuel both take a CSV: the roster slots as the header, then one lineup of player ids per row. */
+export function uploadCsv(slots: string[], lineups: string[][]): string {
+  return [slots.join(','), ...lineups.map((ids) => ids.join(','))].join('\n');
+}
+
+export const siteOf = (templateId: string): 'dk' | 'fd' => (templateId.startsWith('dk-') ? 'dk' : 'fd');
+
+/** Ready for the site's lineup upload: every slot holds a player id from a real slate. */
+export const canUpload = (l: Lineup) => l.slots.length > 0 && l.slots.every((s) => s.id && s.player);
+
+export function downloadFile(name: string, text: string, type = 'text/csv') {
+  const blob = new Blob([text], { type });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+export const fileSlug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 export const templateFor = (id: string) => TEMPLATES.find((t) => t.id === id) ?? TEMPLATES[0];
 

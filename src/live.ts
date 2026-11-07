@@ -55,6 +55,8 @@ export function legLive(sel: Selection, g?: Game, summary?: GameSummary): LegLiv
 
   switch (sel.market) {
     case 'ml':
+      if (sel.side === 'draw') return { sel, state: 'live', text: a === h ? `Level at ${a}–${h}` : `${Math.abs(a - h)}-goal game`, progress: a === h ? 0.6 : 0.3, clock };
+    // falls through
     case 'spread': {
       const margin = sel.side === 'home' ? h - a : a - h;
       const cover = margin + (sel.market === 'spread' ? sel.line ?? 0 : 0);

@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { newId } from '../bets';
 import { fetchScoreboard, fetchSummary, LEAGUE_KEYS, LEAGUES } from '../espn';
 import { canScore, fantasyPoints } from '../stats';
-import { emptySlots, templateFor, TEMPLATES, totals, type Lineup, type Slot } from '../fantasy';
+import { canUpload, downloadFile, emptySlots, fileSlug, siteOf, templateFor, TEMPLATES, totals, uploadCsv, type Lineup, type Slot } from '../fantasy';
 import { fmtDate, todayYMD } from '../store';
-import Generator from './Generator';
+import Generator, { UploadHelp } from './Generator';
 import ProjectionReport from './ProjectionReport';
 import { checkLateSwap, type SwapCheck } from '../lateswap';
 
@@ -65,6 +65,8 @@ export default function Fantasy({ lineups, setLineups }: Props) {
       />
 
       <ProjectionReport lineups={lineups} />
+
+      <SendLineups lineups={lineups} />
 
       {sorted.length === 0 && <div className="empty">No lineups yet. Pick a contest format and start one.</div>}
 
@@ -199,7 +201,7 @@ function Editor({ lineup: l, onChange }: { lineup: Lineup; onChange: (p: Partial
               <tr key={i}>
                 <td className="slot">{s.slot}</td>
                 <td>
-                  <input value={s.player} onChange={(e) => setSlot(i, { player: e.target.value })} placeholder="Player" aria-label={`${s.slot} player`} />
+                  <input value={s.player} onChange={(e) => setSlot(i, { player: e.target.value, id: undefined })} placeholder="Player" aria-label={`${s.slot} player`} />
                 </td>
                 <td>
                   <input value={s.team} onChange={(e) => setSlot(i, { team: e.target.value })} placeholder="Team" aria-label={`${s.slot} team`} />
@@ -247,6 +249,11 @@ function Editor({ lineup: l, onChange }: { lineup: Lineup; onChange: (p: Partial
         {canScore(l.templateId) && (
           <button className="btn" onClick={fillPoints} disabled={filling}>
             {filling ? 'Loading box scores…' : 'Fill points from box scores'}
+          </button>
+        )}
+        {canUpload(l) && (
+          <button className="btn" onClick={() => exportLineups([l])}>
+            Download for {siteOf(l.templateId) === 'dk' ? 'DraftKings' : 'FanDuel'} upload
           </button>
         )}
         {t.scored && <span className="muted">{t.perK.toFixed(2)} pts per $1K salary</span>}
@@ -339,7 +346,7 @@ function LateSwap({ lineup: l, setSlot }: { lineup: Lineup; setSlot: (i: number,
                   className="btn sm"
                   onClick={() => {
                     const p = c.suggestion!;
-                    setSlot(c.index, { player: p.name, team: p.opp ? `${p.team} vs ${p.opp}` : p.team, salary: p.salary, points: null });
+                    setSlot(c.index, { id: p.id, player: p.name, team: p.opp ? `${p.team} vs ${p.opp}` : p.team, salary: p.salary, points: null });
                     setChecks((prev) => prev?.map((x) => (x.index === c.index ? { ...x, state: 'ok', player: p.name, suggestion: undefined, reason: 'Swapped in' } : x)) ?? null);
                   }}
                 >
@@ -351,5 +358,43 @@ function LateSwap({ lineup: l, setSlot }: { lineup: Lineup; setSlot: (i: number,
         </ul>
       )}
     </div>
+  );
+}
+
+/** One upload file for lineups that share a contest format (same slots, same site). */
+function exportLineups(ls: Lineup[]) {
+  const l0 = ls[0];
+  const t = templateFor(l0.templateId);
+  const slots = l0.slots.map((s) => s.slot);
+  downloadFile(`${fileSlug(t.label)}-${l0.date}-${ls.length}-lineup${ls.length === 1 ? '' : 's'}.csv`, uploadCsv(slots, ls.map((l) => l.slots.map((s) => s.id!))));
+}
+
+/** Saved lineups built from a real slate can go straight to the site's bulk upload. */
+function SendLineups({ lineups }: { lineups: Lineup[] }) {
+  const today = todayYMD();
+  const ready = lineups.filter((l) => canUpload(l) && l.date >= today);
+  if (!ready.length) return null;
+  // Group by format and slate, since an upload file belongs to one contest's player list.
+  const groups = new Map<string, Lineup[]>();
+  for (const l of ready) {
+    const k = `${l.templateId}|${l.slateId ?? l.date}`;
+    groups.set(k, [...(groups.get(k) ?? []), l]);
+  }
+  const sites = new Set(ready.map((l) => siteOf(l.templateId)));
+  return (
+    <section className="card sendlineups">
+      <b>Send lineups to DraftKings or FanDuel</b>
+      <p className="muted small">Download an upload file with your saved lineups, then upload it on the site.</p>
+      <div className="row">
+        {[...groups.values()].map((ls) => (
+          <button key={ls[0].id} className="btn" onClick={() => exportLineups(ls)}>
+            {templateFor(ls[0].templateId).label} · {fmtDate(ls[0].date)} · {ls.length} lineup{ls.length === 1 ? '' : 's'}
+          </button>
+        ))}
+      </div>
+      {[...sites].map((s) => (
+        <UploadHelp key={s} site={s} />
+      ))}
+    </section>
   );
 }

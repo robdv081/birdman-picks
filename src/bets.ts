@@ -1,9 +1,9 @@
-import type { Game, GameSummary, LeagueKey } from './espn';
+import { isThreeWay, type Game, type GameSummary, type LeagueKey } from './espn';
 import { load } from './store';
 import { propStat, statValue } from './stats';
 
 export type Market = 'ml' | 'spread' | 'total' | 'parlay' | 'prop' | 'other';
-export type BetSide = 'home' | 'away' | 'over' | 'under';
+export type BetSide = 'home' | 'away' | 'draw' | 'over' | 'under';
 export type BetStatus = 'pending' | 'won' | 'lost' | 'push' | 'void';
 
 /** One priced outcome: a straight bet, or a leg of a parlay. */
@@ -29,6 +29,8 @@ export interface Selection {
   closeChecked?: boolean;
   /** Estimated win probability from the prop builder or FPI model, for stake sizing. */
   est?: number;
+  /** DraftKings link that puts this exact outcome on its bet slip, when the feed had one. */
+  dkLink?: string;
 }
 
 export interface Leg extends Selection {
@@ -93,14 +95,32 @@ export function isGradable(s: Selection) {
 
 /** Settled status once the linked game is final, or null if it can't be graded yet. Props need the box score. */
 export function gradeSelection(s: Selection, g: Game, summary?: GameSummary): Pick<Leg, 'status' | 'finalScore' | 'margin'> | null {
-  if (!g.completed || g.away.score == null || g.home.score == null) return null;
+  if (!g.completed) return null;
+  // Fights have no score: the result flag decides the moneyline, and neither winner means a draw or no contest.
+  if ((g.away.score == null || g.home.score == null) && s.market === 'ml' && (s.side === 'home' || s.side === 'away')) {
+    if (g.away.winner == null && g.home.winner == null) return null;
+    const mine = s.side === 'home' ? g.home : g.away;
+    const theirs = s.side === 'home' ? g.away : g.home;
+    const winner = g.home.winner ? g.home.name : g.away.winner ? g.away.name : null;
+    const finalScore = winner ? `${winner} won${g.detail ? ` (${g.detail})` : ''}` : `No winner${g.detail ? ` (${g.detail})` : ''}`;
+    if (mine.winner) return { status: 'won', finalScore, margin: undefined };
+    if (theirs.winner) return { status: 'lost', finalScore, margin: undefined };
+    return { status: 'push', finalScore, margin: undefined };
+  }
+  if (g.away.score == null || g.home.score == null) return null;
   const a = g.away.score;
   const h = g.home.score;
   let margin: number;
   let finalScore = `${g.away.abbr} ${a} – ${g.home.abbr} ${h}`;
   switch (s.market) {
     case 'ml':
+      if (s.side === 'draw') {
+        margin = a === h ? 1 : -1;
+        break;
+      }
       margin = s.side === 'home' ? h - a : a - h;
+      // A three-way moneyline (soccer) loses on a draw instead of pushing.
+      if (margin === 0 && isThreeWay(s.league ?? g.league)) margin = -1;
       break;
     case 'spread':
       if (s.line == null) return null;

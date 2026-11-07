@@ -174,6 +174,9 @@ function pickBest(pool: PoolPlayer[], o: GenOptions, rules: Rules) {
 const sumProj = (pool: PoolPlayer[], keys: string[]) => keys.reduce((s, k) => s + (pool.find((p) => p.key === k)?.proj ?? 0), 0);
 
 /** DraftKings bulk-upload CSV: one header row of slot names, then one row of player IDs per lineup. */
-export function dkUploadCsv(slots: string[], lineups: GenLineup[]): string {
+/** Bulk-upload file for either site: slot header, then each lineup's player ids in slot order. */
+export function uploadFileCsv(slots: string[], lineups: GenLineup[]): string {
   return [slots.join(','), ...lineups.map((l) => l.slots.map((s) => s.player.id).join(','))].join('\n');
 }
+/** Kept for older callers. */
+export const dkUploadCsv = uploadFileCsv;

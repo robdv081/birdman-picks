@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchInjuries, fetchScoreboard, LEAGUE_KEYS, LEAGUES, type Game, type Injury, type LeagueKey, type Side } from '../espn';
+import { fetchInjuries, fetchScoreboard, LEAGUES, leaguesIn, SPORT_GROUPS, type Game, type Injury, type LeagueKey, type Side } from '../espn';
 import { breakEven, fmtAmerican, fmtLine, fmtPct, type Bet, type BetSide, type Market } from '../bets';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
 import { lineMoves } from '../movement';
 import { gameWeather, passGameFactor, weatherNote, type GameWeather } from '../weather';
 import LiveSweat from './LiveSweat';
+import Leaderboard from './Leaderboard';
 
 interface Props {
   league: LeagueKey;
@@ -32,6 +33,7 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
 
   useEffect(() => {
     setInjuries({});
+    if (LEAGUES[league].kind !== 'team' || LEAGUES[league].group === 'Soccer') return;
     const ctrl = new AbortController();
     const get = () => fetchInjuries(league, ctrl.signal).then(setInjuries, () => {});
     get();
@@ -60,8 +62,10 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
     [league, date]
   );
 
+  const field = LEAGUES[league].kind === 'field';
   useEffect(() => {
     setGames(null);
+    if (field) return;
     const ctrl = new AbortController();
     load(ctrl.signal);
     const t = setInterval(() => {
@@ -71,8 +75,14 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
       ctrl.abort();
       clearInterval(t);
     };
-  }, [load]);
+  }, [load, field]);
 
+  // Keep the selected sport and league tabs in view on narrow screens.
+  useEffect(() => {
+    document.querySelectorAll('.chips .chip.on').forEach((el) => el.scrollIntoView({ block: 'nearest', inline: 'center' }));
+  }, [league]);
+
+  const noun = LEAGUES[league].group === 'Fighting' ? 'fights' : LEAGUES[league].group === 'Tennis' ? 'matches' : 'games';
   const tracked = new Set(bets.filter((b) => b.eventId).map((b) => b.eventId));
   const live = games?.filter((g) => g.state === 'in').length ?? 0;
 
@@ -85,13 +95,28 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
 
       <LiveSweat bets={bets} compact />
 
-      <div className="chips" role="tablist" aria-label="League">
-        {LEAGUE_KEYS.map((k) => (
-          <a key={k} role="tab" aria-selected={k === league} className={`chip ${k === league ? 'on' : ''}`} href={`#${k}`}>
-            {LEAGUES[k].label}
+      <div className="chips" role="tablist" aria-label="Sport">
+        {SPORT_GROUPS.map((g) => (
+          <a
+            key={g}
+            role="tab"
+            aria-selected={g === LEAGUES[league].group}
+            className={`chip ${g === LEAGUES[league].group ? 'on' : ''}`}
+            href={`#${leaguesIn(g)[0]}`}
+          >
+            {g}
           </a>
         ))}
       </div>
+      {leaguesIn(LEAGUES[league].group).length > 1 && (
+        <div className="chips small" role="tablist" aria-label="League">
+          {leaguesIn(LEAGUES[league].group).map((k) => (
+            <a key={k} role="tab" aria-selected={k === league} className={`chip ${k === league ? 'on' : ''}`} href={`#${k}`}>
+              {LEAGUES[k].label}
+            </a>
+          ))}
+        </div>
+      )}
 
       <div className="datebar">
         <button className="btn ghost" aria-label="Previous day" onClick={() => setDate((d) => shiftYMD(d, -1))}>
@@ -110,6 +135,7 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
           </button>
         )}
         <span className="spacer" />
+        {!field && (<>
         <span className="status-line">
           <span className={`dot ${error ? 'bad' : live ? 'live' : ''}`} />
           {error
@@ -121,10 +147,12 @@ export default function Scores({ league, bets, onTrack, onDetails }: Props) {
         <button className="btn" onClick={() => load()} disabled={loading}>
           {loading ? 'Refreshing…' : 'Refresh'}
         </button>
+        </>)}
       </div>
 
-      {games == null && !error && <div className="empty">Loading {LEAGUES[league].label} games…</div>}
-      {games?.length === 0 && <div className="empty">No {LEAGUES[league].label} games on {fmtDate(date)}.</div>}
+      {field && <Leaderboard league={league} date={date} />}
+      {!field && games == null && !error && <div className="empty">Loading {LEAGUES[league].label} {noun}…</div>}
+      {!field && games?.length === 0 && <div className="empty">No {LEAGUES[league].label} {noun} on {fmtDate(date)}.</div>}
 
       <div className="games">
         {games?.map((g) => (
@@ -155,8 +183,18 @@ interface CardProps {
 function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: CardProps) {
   const o = g.odds;
   const open = g.state === 'pre';
-  const matchup = `${g.away.abbr} @ ${g.home.abbr}`;
-  const winner = g.completed && g.away.score != null && g.home.score != null ? (g.away.score > g.home.score ? 'away' : g.home.score > g.away.score ? 'home' : null) : null;
+  const kind = LEAGUES[g.league].kind;
+  const versus = kind === 'versus';
+  const matchup = versus ? `${g.away.name} vs ${g.home.name}` : `${g.away.abbr} @ ${g.home.abbr}`;
+  const winner = g.completed
+    ? g.away.winner
+      ? 'away'
+      : g.home.winner
+        ? 'home'
+        : g.away.score != null && g.home.score != null
+          ? g.away.score > g.home.score ? 'away' : g.home.score > g.away.score ? 'home' : null
+          : null
+    : null;
   const time = new Date(g.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const moves = g.state === 'pre' ? lineMoves(g) : [];
   const [wx, setWx] = useState<GameWeather | null>(null);
@@ -169,8 +207,16 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
   }, [g.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const wxNote = weatherNote(wx);
 
+  const L = o?.links;
+  const linkFor = (market: Market, side: BetSide) =>
+    market === 'ml'
+      ? side === 'home' ? L?.homeML : side === 'away' ? L?.awayML : L?.draw
+      : market === 'spread'
+        ? side === 'home' ? L?.homeSpread : L?.awaySpread
+        : side === 'over' ? L?.over : L?.under;
   const track = (market: Market, side: BetSide, odds: number | undefined, line: number | undefined, selection: string) =>
     onTrack({
+      dkLink: linkFor(market, side),
       league: g.league,
       eventId: g.id,
       date,
@@ -217,7 +263,7 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
           {t.logo ? <img src={t.logo} alt="" width={28} height={28} loading="lazy" /> : <span className="nologo" />}
           <span className="tname">
             <span className="full">{t.name}</span>
-            <span className="abbr">{t.abbr}</span>
+            <span className="abbr">{versus ? t.name : t.abbr}</span>
             {(t.record || inj) && (
               <small>
                 {t.record}
@@ -226,8 +272,13 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
               </small>
             )}
           </span>
-          <span className="score">{g.state === 'pre' ? '' : t.score ?? '—'}</span>
+          <span className="score">{g.state === 'pre' ? '' : t.score ?? (versus ? (winner === side ? 'W' : '') : '—')}</span>
         </div>
+        {!o && versus && open && (
+          <button className="odd pick" onClick={() => track('ml', side, undefined, undefined, `${t.name} to win`)}>
+            <b>Pick</b>
+          </button>
+        )}
         {o && (
           <>
             {cell('ml', side, ml, undefined, fmtAmerican(ml), `${t.abbr} ML`)}
@@ -247,10 +298,11 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
   };
 
   return (
-    <article className={`game ${g.state}`}>
+    <article className={`game ${g.state} ${o ? '' : 'noodds'}`}>
       <div className="ghead">
         <span className={`state ${g.state}`}>
           {g.state === 'pre' ? time : g.detail}
+          {g.note && <span className="muted gnote"> · {g.note}</span>}
           {tracked && <span className="pill tracked">Tracked</span>}
         </span>
         {o && (
@@ -263,6 +315,22 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
       </div>
       {row('away', g.away)}
       {row('home', g.home)}
+      {o?.draw != null && (
+        <div className={`trow draw ${g.completed && winner == null ? '' : g.completed ? 'lost' : ''}`}>
+          <div className="team">
+            <span className="nologo" />
+            <span className="tname">
+              <span className="full">Draw</span>
+              <span className="abbr">Draw</span>
+              <small>3-way moneyline</small>
+            </span>
+            <span className="score" />
+          </div>
+          {cell('ml', 'draw', o.draw, undefined, fmtAmerican(o.draw), `${matchup} Draw`)}
+          <span />
+          <span />
+        </div>
+      )}
       {(moves.length > 0 || wxNote || (g.indoor && (g.league === 'nfl' || g.league === 'cfb'))) && (
         <div className="gnotes">
           {moves.length > 0 && (
@@ -284,9 +352,11 @@ function GameCard({ game: g, date, tracked, injuries, onTrack, onDetails }: Card
         <span>{[g.venue, g.broadcast].filter(Boolean).join(' · ')}</span>
         <span className="spacer" />
         {o && <span className="muted">{open ? `${o.provider} · tap a price` : `${o.provider} closing line`}</span>}
-        <button className="linkbtn" onClick={onDetails}>
-          {g.state === 'pre' ? 'Injuries & props' : 'Box score'} →
-        </button>
+        {kind === 'team' && (
+          <button className="linkbtn" onClick={onDetails}>
+            {g.state === 'pre' ? (LEAGUES[g.league].group === 'Soccer' ? 'Match details' : 'Injuries & props') : 'Box score'} →
+          </button>
+        )}
       </div>
     </article>
   );

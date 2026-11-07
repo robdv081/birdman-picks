@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { breakEven, fmtAmerican, fmtPct, newId, parlayOdds, toDecimal, type Bet, type Leg } from '../bets';
 import { StakeNote } from './PropBuilder';
+import SendToBook from './SendToBook';
 
 interface Props {
   slip: Leg[];
@@ -94,6 +95,7 @@ export default function ParlaySlip({ slip, setSlip, onSave }: Props) {
         )}
 
         {ok && slip.every((l) => l.est != null) && <StakeNote p={slip.reduce((x, l) => x * l.est!, 1)} odds={price} />}
+        {slip.length > 0 && <SendToBook picks={slip} title={`${slip.length}-leg parlay`} />}
         <div className="actions">
           <button className="btn danger" onClick={() => setSlip([])}>
             Clear

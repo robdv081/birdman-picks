@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import SendToBook from './SendToBook';
 import { LEAGUES } from '../espn';
 import {
   fmtAmerican,
@@ -54,6 +55,7 @@ function groupKey(b: Bet, by: GroupBy): string {
 
 export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Props) {
   const [filter, setFilter] = useState<Filter>('all');
+  const [sendId, setSendId] = useState<string | null>(null);
   const [groupBy, setGroupBy] = useState<GroupBy>('league');
   const [settings, setSettings] = useStored<Settings>('bp.settings', () => ({ unitSize: 0 }));
   const fileRef = useRef<HTMLInputElement>(null);
@@ -228,7 +230,7 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
           const p = profit(b);
           const auto = b.legs ? b.legs.some(isGradable) : isGradable(b);
           return (
-            <li key={b.id} className={`bet ${b.status}`}>
+            <li key={b.id} className={`bet ${b.status} ${sendId === b.id ? 'sending' : ''}`}>
               <button className="betmain" onClick={() => onEdit(b)}>
                 <span className="betsel">
                   <b>{b.selection}</b>
@@ -259,6 +261,11 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
                 </span>
               </button>
               <div className="betside">
+                {b.status === 'pending' && (
+                  <button className="linkbtn sendto" onClick={() => setSendId(sendId === b.id ? null : b.id)} aria-expanded={sendId === b.id}>
+                    {sendId === b.id ? 'Close' : 'Bet it →'}
+                  </button>
+                )}
                 {b.status === 'pending' ? (
                   auto ? (
                     <span className="pill pending" title="Settles itself when the game goes final">
@@ -279,6 +286,11 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
                   </>
                 )}
               </div>
+              {sendId === b.id && (
+                <div className="betsend">
+                  <SendToBook picks={b.legs ?? [b]} title={b.legs ? b.selection : undefined} />
+                </div>
+              )}
             </li>
           );
         })}

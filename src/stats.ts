@@ -29,7 +29,7 @@ const footballProps: PropStat[] = [
   { key: 'tds', label: 'Rush + rec TDs', parts: [fb('rushing', 'TD'), fb('receiving', 'TD')] },
 ];
 
-export const PROP_STATS: Record<LeagueKey, PropStat[]> = {
+export const PROP_STATS: Partial<Record<LeagueKey, PropStat[]>> = {
   nba: [
     { key: 'pts', label: 'Points', parts: [nbaPts] },
     { key: 'reb', label: 'Rebounds', parts: [nbaReb] },
@@ -61,7 +61,7 @@ export const PROP_STATS: Record<LeagueKey, PropStat[]> = {
   ],
 };
 
-export const propStat = (league: LeagueKey, key: string) => PROP_STATS[league].find((p) => p.key === key);
+export const propStat = (league: LeagueKey, key: string) => PROP_STATS[league]?.find((p) => p.key === key);
 
 export function normName(s: string) {
   return s

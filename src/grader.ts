@@ -74,7 +74,7 @@ export async function captureCloses(bets: Bet[]): Promise<Map<string, Partial<Be
     if (!c) return { closeChecked: true };
     const side =
       s.market === 'ml'
-        ? { odds: s.side === 'home' ? c.homeML : c.awayML, line: undefined }
+        ? { odds: s.side === 'home' ? c.homeML : s.side === 'away' ? c.awayML : undefined, line: undefined }
         : s.market === 'spread'
           ? s.side === 'home' ? c.homeSpread : c.awaySpread
           : s.side === 'over' ? c.over : c.under;

@@ -16,6 +16,7 @@ import {
 import { PROP_STATS } from '../stats';
 import { load, todayYMD } from '../store';
 import type { Settings } from './Bets';
+import SendToBook from './SendToBook';
 
 interface Props {
   draft: Partial<Bet>;
@@ -41,7 +42,7 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
   const [notes, setNotes] = useState(draft.notes ?? '');
   const [status, setStatus] = useState<BetStatus>(draft.status ?? 'pending');
   // Linked player props
-  const propStats = draft.league ? PROP_STATS[draft.league] : [];
+  const propStats = (draft.league && PROP_STATS[draft.league]) || [];
   const [player, setPlayer] = useState(draft.player ?? '');
   const [stat, setStat] = useState(draft.stat ?? propStats[0]?.key ?? '');
   const [side, setSide] = useState<BetSide>(draft.side ?? 'over');
@@ -91,8 +92,8 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
 
   const addLeg = () => {
     if (!valid) return;
-    const { league, eventId, matchup, side: s, line: l } = draft;
-    onAddLeg({ league, eventId, matchup, side: s, line: l, ...selectionFields(), status: 'pending' });
+    const { league, eventId, matchup, side: s, line: l, dkLink } = draft;
+    onAddLeg({ league, eventId, matchup, side: s, line: l, dkLink, ...selectionFields(), status: 'pending' });
   };
 
   return (
@@ -212,6 +213,10 @@ export default function BetModal({ draft, slipCount, onSave, onAddLeg, onDelete,
           <span>Notes</span>
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reasoning, injury notes…" />
         </label>
+
+        {valid && status === 'pending' && (
+          <SendToBook picks={isParlay ? draft.legs ?? [] : [{ ...(draft as Bet), ...selectionFields() }]} title={isParlay ? label : undefined} />
+        )}
 
         <div className="actions">
           {editing && (
