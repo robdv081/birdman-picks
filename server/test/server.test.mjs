@@ -534,3 +534,14 @@ test('the cron starts the pick agent and Scout on GitHub at their Eastern times,
   const bad = await W.dispatchJobs({ GH_DISPATCH_TOKEN: 'x' }, at('2026-11-08T17:15:00Z'), async () => new Response('{}', { status: 401 }));
   assert.deepEqual(bad.failed, ['agent.yml (401)']);
 });
+
+test("owner pass: the owner's key unlocks Pro research and alerts without a subscription; other keys don't", async () => {
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  const st = await call('GET', '/api/pro/status', undefined, owner);
+  assert.equal(st.status, 200);
+  assert.equal(st.body.pro, true);
+  assert.equal(st.body.owner, true);
+  assert.equal((await call('GET', '/api/pro/scout', undefined, owner)).status, 200);
+  assert.equal((await call('GET', '/api/pro/scout', undefined, { Authorization: 'Bearer ' + AGENT })).status, 503, 'the agent key is not a Pro pass');
+  assert.equal((await call('GET', '/api/pro/status', undefined, { Authorization: 'Bearer not-the-owner-key-123' })).body.owner, undefined);
+});

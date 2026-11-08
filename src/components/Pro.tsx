@@ -58,9 +58,9 @@ export function ProCard() {
     <div className="card procard">
       <div className="row between">
         <b>
-          Birdman Pro <span className={`pill ${p.pro ? 'won' : ''}`}>{p.pro ? 'Active' : 'Not active'}</span>
+          Birdman Pro <span className={`pill ${p.pro ? 'won' : ''}`}>{p.owner ? 'Owner pass' : p.pro ? 'Active' : 'Not active'}</span>
         </b>
-        {p.pro ? (
+        {p.owner ? null : p.pro ? (
           <button
             className="btn sm"
             onClick={() =>
@@ -77,7 +77,8 @@ export function ProCard() {
           </button>
         )}
       </div>
-      {p.pro && renews && (
+      {p.owner && <p className="muted small">Every Pro feature is free on devices where you're signed in as the owner (Record tab).</p>}
+      {p.pro && !p.owner && renews && (
         <p className="muted small">
           {p.cancelsAtPeriodEnd ? `Canceled. Pro stays on until ${renews}.` : `Renews ${renews}. Update your card or cancel under Manage billing.`}
         </p>

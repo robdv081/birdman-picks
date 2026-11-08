@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api, SERVER_URL, serverReady } from './server';
 import { load, save } from './store';
+import { proBearer } from './pro';
 
 const STATE_KEY = 'bp.push';
 
@@ -35,7 +36,7 @@ export function usePush() {
   return s;
 }
 
-const proAuth = () => ({ Authorization: `Bearer ${load<string>('bp.pro.token', '')}` });
+const proAuth = () => ({ Authorization: `Bearer ${proBearer()}` });
 
 function keyBytes(b64: string) {
   const bin = atob(b64.replace(/-/g, '+').replace(/_/g, '/'));

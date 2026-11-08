@@ -1,5 +1,6 @@
 // Birdman Picks Pro: confirms Stripe Payment Link purchases, hands the app a signed token, checks the
 // subscription is still active, restores Pro on a new device by emailed code, and opens Stripe's billing page.
+import { isAdmin } from './record';
 import { b64url, bearer, fromB64url, HttpError, json, readJson, sha256, str, timingSafeEqual, type Deps, type Env } from './util';
 
 const STRIPE = 'https://api.stripe.com/v1';
@@ -28,6 +29,8 @@ export async function claim(request: Request, env: Env) {
 
 /** GET /api/pro/status (Bearer token) */
 export async function status(request: Request, env: Env) {
+  // The owner's key is a lifetime Pro pass on the owner's own devices.
+  if (isAdmin(request, env)) return json({ pro: true, owner: true, renews: null, cancelsAtPeriodEnd: false });
   needStripe(env);
   const customer = await customerFromToken(env, bearer(request));
   if (!customer) return json({ pro: false, reason: 'signed_out' }, 401);
@@ -175,6 +178,7 @@ function normalizeEmail(v: unknown) {
 
 /** Server-side gate: browser cached membership never authorizes research access. */
 export async function requirePro(request: Request, env: Env) {
+  if (isAdmin(request, env)) return { customer: 'owner', renews: null as string | null };
   needStripe(env);
   const customer = await customerFromToken(env, bearer(request));
   if (!customer) throw new HttpError(401, 'Sign in to Pro first.');

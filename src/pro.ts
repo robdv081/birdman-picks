@@ -2,7 +2,7 @@
 // Stripe sends buyers back with ?session_id=..., the server checks it with Stripe and returns a signed
 // token, and the app re-checks the subscription with the server on every launch.
 import { useEffect, useState } from 'react';
-import { api, serverReady } from './server';
+import { api, ownerKey, serverReady } from './server';
 import { load, save } from './store';
 
 export const PAYMENT_LINK = 'https://buy.stripe.com/dRm4gzaQt4FP04E7BW1Jm00';
@@ -22,6 +22,8 @@ export interface ProState {
   renews?: string | null;
   cancelsAtPeriodEnd?: boolean;
   signedIn: boolean;
+  /** Pro through the owner's key (free on the owner's own devices), not a subscription. */
+  owner?: boolean;
   /** Set right after a purchase lands, for a thank-you note. */
   justBought?: boolean;
   error?: string;
@@ -43,6 +45,8 @@ function set(patch: Partial<ProState>) {
 
 const token = () => load<string>(TOKEN_KEY, '');
 const auth = () => ({ Authorization: `Bearer ${token()}` });
+/** What Pro-only server calls send: the owner's key if signed in as owner, otherwise the Pro token. */
+export const proBearer = () => ownerKey() || token();
 
 /** After checkout: trade Stripe's session id for a Pro token. */
 async function claimFromUrl() {
@@ -63,6 +67,16 @@ async function claimFromUrl() {
 
 export async function refreshPro() {
   if (!enabled) return;
+  // Owner pass: the owner's key unlocks Pro on this device; the server checks the key.
+  if (ownerKey()) {
+    try {
+      const r = await api<{ pro: boolean; owner?: boolean }>('/api/pro/status', { headers: { Authorization: `Bearer ${ownerKey()}` } });
+      if (r.owner) return set({ pro: true, owner: true, renews: null, cancelsAtPeriodEnd: false, checked: true, signedIn: true });
+    } catch (e) {
+      if ((e as { status?: number }).status !== 401) return set({ checked: true }); // offline: keep what we had
+    }
+  }
+  if (state.owner) set({ owner: false, pro: false });
   if (!token()) {
     set({ pro: false, checked: true, signedIn: false });
     return;

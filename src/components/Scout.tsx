@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, serverReady } from '../server';
-import { usePro } from '../pro';
-import { load } from '../store';
+import { proBearer, usePro } from '../pro';
 import { LEAGUES, type LeagueKey } from '../espn';
 import type { AnalystPick, ScoutReport } from '../scout';
 import { ProGate } from './Pro';
@@ -29,7 +28,7 @@ export default function Scout() {
     setError('');
     try {
       const r = await api<{ report: ScoutReport | null; expired: boolean }>('/api/pro/scout', {
-        headers: { Authorization: `Bearer ${load<string>('bp.pro.token', '')}` },
+        headers: { Authorization: `Bearer ${proBearer()}` },
       });
       setReport(r.report);
       setExpired(r.expired);

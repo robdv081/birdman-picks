@@ -13,6 +13,7 @@ import {
 } from '../server';
 import { fmtDate } from '../store';
 import ProAlerts, { FollowButton } from './ProAlerts';
+import { refreshPro } from '../pro';
 
 type Filter = 'all' | 'pending' | 'settled';
 
@@ -215,6 +216,7 @@ function OwnerBox({ owner, setOwner }: { owner: boolean; setOwner: (b: boolean) 
           onClick={() => {
             setOwnerKey('');
             setOwner(false);
+            void refreshPro();
           }}
         >
           Sign out
@@ -238,6 +240,7 @@ function OwnerBox({ owner, setOwner }: { owner: boolean; setOwner: (b: boolean) 
               await checkOwnerKey(key.trim());
               setOwnerKey(key.trim());
               setOwner(true);
+              void refreshPro();
               setMsg(null);
             } catch (err) {
               setMsg((err as Error).message);
