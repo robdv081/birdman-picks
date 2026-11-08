@@ -680,3 +680,10 @@ body.overlay-mode { background: transparent !important; }
 @keyframes ov-pop { from { transform: translateY(-12px) scale(0.96); opacity: 0; } to { transform: none; opacity: 1; } }
 
 .compete > .card { margin-bottom: 12px; }
+
+/* ---- Pro locks inside free tools ---- */
+.prolock { border: 0; background: var(--gold-soft); color: var(--ink); border-radius: 999px; font: inherit; font-size: 12px; font-weight: 700; padding: 1px 8px; cursor: pointer; white-space: nowrap; }
+.prohint { margin: 8px 0 0; color: var(--ink-2); }
+.propeek { position: relative; border-radius: 14px; overflow: hidden; }
+.propeek-inner { filter: blur(6px); pointer-events: none; user-select: none; max-height: 340px; overflow: hidden; }
+.propeek-cta { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; background: color-mix(in srgb, var(--bg) 55%, transparent); }

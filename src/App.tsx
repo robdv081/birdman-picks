@@ -20,7 +20,7 @@ import Pickem from './components/Pickem';
 import RedZoneBar from './components/RedZoneBar';
 import { useRedZone } from './redzone';
 import { HELPLINE } from './guard';
-import { ProGate, ProNotice } from './components/Pro';
+import { ProNotice } from './components/Pro';
 import { startPro, usePro } from './pro';
 import { refreshPush, syncWatch, usePush, watchList } from './push';
 import Compete, { PlayerPage } from './components/Compete';
@@ -216,9 +216,7 @@ export default function App() {
           />
         )}
         {route.view === 'props' && (
-          <ProGate feature="Prop parlay builder" blurb="Build player-prop parlays from tonight's lines with each player's hit rate, a fair price and a suggested stake.">
-            <PropBuilder setSlip={setSlip} />
-          </ProGate>
+          <PropBuilder setSlip={setSlip} />
         )}
         {route.view === 'bets' && <TiltCard bets={bets} />}
         {route.view === 'bets' && (

@@ -15,6 +15,7 @@ import {
 } from '../propgen';
 import { LINE_LEAGUES, MODEL_NAME, scanGameLines } from '../gamelines';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
+import { Locked, ProHint, useIsPro } from './Pro';
 
 // Player props where the book posts them; game lines (moneyline, spread) for college sports, which have none.
 const BUILDER_LEAGUES = LEAGUE_KEYS.filter((k) => PROP_LEAGUES.includes(k) || LINE_LEAGUES.includes(k));
@@ -39,6 +40,7 @@ export default function PropBuilder({ setSlip }: Props) {
   const [parlay, setParlay] = useState<Parlay | null>(null);
   const [added, setAdded] = useState<string | null>(null);
 
+  const pro = useIsPro();
   const key = `${league}|${date}`;
   const lines = LINE_LEAGUES.includes(league);
   const model = MODEL_NAME[league] ?? 'model';
@@ -222,16 +224,20 @@ export default function PropBuilder({ setSlip }: Props) {
                   </span>
                   <span>
                     <small>{lines ? `${model} blend says` : 'Recent form says'}</small>
-                    <b className={parlay.est > parlay.implied ? 'pos' : 'neg'}>{fmtPct(parlay.est)}</b>
+                    {pro ? <b className={parlay.est > parlay.implied ? 'pos' : 'neg'}>{fmtPct(parlay.est)}</b> : <Locked />}
                   </span>
                 </div>
               </header>
               <ul className="plegs">
                 {parlay.legs.map((c) => (
-                  <LegRow key={c.key} c={c} action={<button className="btn ghost sm" onClick={() => swap(c)}>Swap</button>} />
+                  <LegRow key={c.key} c={c} pro={pro} action={<button className="btn ghost sm" onClick={() => swap(c)}>Swap</button>} />
                 ))}
               </ul>
-              <StakeNote p={parlay.est} odds={parlay.odds} />
+              {pro ? (
+                <StakeNote p={parlay.est} odds={parlay.odds} />
+              ) : (
+                <ProHint>Each leg's hit rate, the model's win chance and a suggested stake are Pro.</ProHint>
+              )}
               {new Set(parlay.legs.map((l) => l.game.id)).size < parlay.legs.length && (
                 <p className="warn small">
                   Includes same-game legs. Sportsbooks reprice those, so your book's price may be shorter than {fmtAmerican(parlay.odds)}.
@@ -250,7 +256,14 @@ export default function PropBuilder({ setSlip }: Props) {
             </article>
           )}
 
-          {topLegs.length > 0 && (
+          {topLegs.length > 0 && !pro && (
+            <div className="card toplegs">
+              <b>Best individual legs</b>
+              <ProHint>The model's {topLegs.length} strongest single legs tonight, ranked by edge with stake sizes, are Pro.</ProHint>
+            </div>
+          )}
+
+          {topLegs.length > 0 && pro && (
             <div className="card toplegs">
               <b>Best individual legs</b>
               <p className="muted small">
@@ -260,7 +273,7 @@ export default function PropBuilder({ setSlip }: Props) {
               </p>
               <ul className="plegs">
                 {topLegs.map((c) => (
-                  <LegRow key={c.key} c={c} action={<button className="btn ghost sm" onClick={() => addToSlip([c])}>+ Slip</button>} />
+                  <LegRow key={c.key} c={c} pro={pro} action={<button className="btn ghost sm" onClick={() => addToSlip([c])}>+ Slip</button>} />
                 ))}
               </ul>
             </div>
@@ -279,7 +292,7 @@ export default function PropBuilder({ setSlip }: Props) {
   );
 }
 
-function LegRow({ c, action }: { c: Candidate; action: React.ReactNode }) {
+function LegRow({ c, action, pro }: { c: Candidate; action: React.ReactNode; pro: boolean }) {
   return (
     <li className="pleg">
       <div className="pmain">
@@ -288,7 +301,9 @@ function LegRow({ c, action }: { c: Candidate; action: React.ReactNode }) {
           {c.team} · {c.game.away.abbr} @ {c.game.home.abbr}
           {c.gtd && <span className="inj"> · questionable</span>}
         </small>
-        {c.kind === 'line' ? (
+        {!pro ? (
+          <small className="muted">🔒 {c.kind === 'line' ? 'Model odds' : 'Hit rate and model odds'} with Pro</small>
+        ) : c.kind === 'line' ? (
           <small>
             {c.detail} · book {fmtPct(breakEven(c.odds))} vs blend <span className={c.edge > 0 ? 'pos' : 'neg'}>{fmtPct(c.est)}</span>
           </small>
@@ -306,7 +321,7 @@ function LegRow({ c, action }: { c: Candidate; action: React.ReactNode }) {
       </div>
       <div className="pside">
         <b>{fmtAmerican(c.odds)}</b>
-        {kellyUnits(c.est, c.odds) > 0 && <small className="muted">stake {kellyUnits(c.est, c.odds)}u</small>}
+        {pro && kellyUnits(c.est, c.odds) > 0 && <small className="muted">stake {kellyUnits(c.est, c.odds)}u</small>}
         {action}
       </div>
     </li>

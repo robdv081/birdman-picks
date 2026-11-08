@@ -10,7 +10,7 @@ import { SPORT_LABEL } from '../dfs';
 import { fmtDate, shiftYMD, todayYMD } from '../store';
 import LiveSweat from './LiveSweat';
 import AlertsToggle from './AlertsToggle';
-import { ProGate } from './Pro';
+import { ProHint, useIsPro } from './Pro';
 
 const MOVE_LEAGUES: LeagueKey[] = ['nfl', 'cfb', 'nba', 'mcbb', 'nhl', 'mlb'];
 const time = (iso: string) => new Date(iso).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' });
@@ -99,9 +99,7 @@ export default function Today({ bets, setSlip }: { bets: Bet[]; setSlip: (fn: (p
         </div>
       </div>
 
-      <ProGate feature="Best edges today" blurb="Scans tonight's props and college lines for prices the numbers say are off, ranked by edge with a stake size.">
-        <BestEdges games={games} setSlip={setSlip} />
-      </ProGate>
+      <BestEdges games={games} setSlip={setSlip} />
       <FantasyValues />
     </section>
   );
@@ -113,6 +111,7 @@ function BestEdges({ games, setSlip }: { games: Game[] | null; setSlip: (fn: (pr
   const [progress, setProgress] = useState<string | null>(null);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const today = todayYMD();
+  const pro = useIsPro();
 
   const scan = async () => {
     if (!games) return;
@@ -145,7 +144,24 @@ function BestEdges({ games, setSlip }: { games: Game[] | null; setSlip: (fn: (pr
       </p>
       {progress && <p className="muted small">{progress}</p>}
       {edges && !edges.length && !progress && <p className="muted small">No edges worth listing right now.</p>}
-      {edges && edges.length > 0 && (
+      {edges && edges.length > 0 && !pro && (
+        <>
+          <ul className="plegs">
+            {edges.map((c) => (
+              <li key={c.key} className="pleg">
+                <div className="pmain">
+                  <b>🔒 {LEAGUES[c.league].label} {c.kind === 'line' ? 'side' : 'player prop'}</b>
+                  <small className="muted">Starts {new Date(c.game.start).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</small>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <ProHint>
+            The model found {edges.length} edge{edges.length === 1 ? '' : 's'} tonight. The picks, prices, edges and stake sizes are Pro.
+          </ProHint>
+        </>
+      )}
+      {edges && edges.length > 0 && pro && (
         <ul className="plegs">
           {edges.map((c) => (
             <li key={c.key} className="pleg">
@@ -181,6 +197,7 @@ function BestEdges({ games, setSlip }: { games: Game[] | null; setSlip: (fn: (pr
 /** Top values from today's projections, if any were built. */
 function FantasyValues() {
   const today = todayYMD();
+  const pro = useIsPro();
   const snaps = loadSnapshots().filter((s) => s.date === today);
   return (
     <div className="card tcard wide">
@@ -206,8 +223,11 @@ function FantasyValues() {
                     <span>
                       {p.name} <small className="muted">{p.pos.join('/')} · {p.team}</small>
                     </span>
-                    <small className="muted">${p.salary.toLocaleString()} · {p.proj.toFixed(1)} pts</small>
-                    <b>{((p.proj / p.salary) * 1000).toFixed(2)}x</b>
+                    <small className="muted">
+                      ${p.salary.toLocaleString()}
+                      {pro ? ` · ${p.proj.toFixed(1)} pts` : ''}
+                    </small>
+                    <b>{pro ? `${((p.proj / p.salary) * 1000).toFixed(2)}x` : '🔒'}</b>
                   </li>
                 ))}
               </ul>

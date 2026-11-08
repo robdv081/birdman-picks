@@ -6,7 +6,6 @@ import { canUpload, downloadFile, emptySlots, fileSlug, siteOf, templateFor, TEM
 import { fmtDate, todayYMD } from '../store';
 import Generator, { UploadHelp } from './Generator';
 import ProjectionReport from './ProjectionReport';
-import { ProGate } from './Pro';
 import { checkLateSwap, type SwapCheck } from '../lateswap';
 
 interface Props {
@@ -58,14 +57,12 @@ export default function Fantasy({ lineups, setLineups }: Props) {
         </div>
       </div>
 
-      <ProGate feature="Lineup generator" blurb="Builds optimized DraftKings and FanDuel lineups from projections and salaries, ready to upload.">
-        <Generator
-          onSave={(l) => {
-            setLineups((prev) => [l, ...prev]);
-            setOpenId(l.id);
-          }}
-        />
-      </ProGate>
+      <Generator
+        onSave={(l) => {
+          setLineups((prev) => [l, ...prev]);
+          setOpenId(l.id);
+        }}
+      />
 
       <ProjectionReport lineups={lineups} />
 

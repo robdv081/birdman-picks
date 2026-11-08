@@ -19,7 +19,7 @@ import LiveSweat from './LiveSweat';
 import ReportCard from './ReportCard';
 import AlertsToggle from './AlertsToggle';
 import { HELPLINE, stakedThisWeek } from '../guard';
-import { ProCard, ProGate } from './Pro';
+import { ProCard, ProPeek } from './Pro';
 
 export interface Settings {
   unitSize: number; // dollars per unit; 0 = not set
@@ -217,9 +217,9 @@ export default function Bets({ bets, setBets, lineups, setLineups, onEdit }: Pro
         </div>
       )}
 
-      <ProGate feature="Report card" blurb="Closing line value, how your parlays die, and which bet types make or cost you money.">
+      <ProPeek what="Report card: closing line value, how your parlays die, and which bet types make or cost you money">
         <ReportCard bets={bets} />
-      </ProGate>
+      </ProPeek>
 
       <div className="chips small">
         {(['all', 'pending', 'settled'] as Filter[]).map((f) => (

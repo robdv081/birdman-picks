@@ -5,6 +5,7 @@ import { downloadFile, fileSlug, TEMPLATES, type Lineup } from '../fantasy';
 import { uploadFileCsv, generate, type ContestStyle, type GenLineup } from '../generator';
 import { RISK_LABEL } from '../optimizer';
 import { saveSnapshot } from '../snapshots';
+import { ProHint, useIsPro } from './Pro';
 
 const money = (n: number) => `$${n.toLocaleString()}`;
 const SPORTS: Sport[] = ['nfl', 'nba', 'nhl'];
@@ -23,6 +24,9 @@ function ago(iso?: string) {
 }
 
 export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
+  const pro = useIsPro();
+  /** The model's numbers (projections, ceilings, value, Vegas totals) show for Pro; everyone can still generate. */
+  const num = (v: string) => (pro ? v : '🔒');
   const [site, setSite] = useState<'dk' | 'fd'>('dk');
   const [dk, setDk] = useState<{ updated?: string; slates: Slate[] } | null>(null);
   const [slateId, setSlateId] = useState('');
@@ -135,7 +139,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
       templateId,
       cap: slate.cap,
       slots: l.slots.map((s) => ({ slot: s.slot, id: s.player.id, player: s.player.name, team: s.player.opp ? `${s.player.team} vs ${s.player.opp}` : s.player.team, salary: s.player.salary, points: null })),
-      notes: `Generated (${style === 'gpp' ? 'tournament' : 'cash'}): projected ${l.proj.toFixed(1)}, ceiling ${l.ceiling.toFixed(1)}.`,
+      notes: `Generated (${style === 'gpp' ? 'tournament' : 'cash'})${pro ? `: projected ${l.proj.toFixed(1)}, ceiling ${l.ceiling.toFixed(1)}` : ''}.`,
       projected: Math.round(l.proj * 10) / 10,
       slateId: snapId ?? undefined,
     });
@@ -377,7 +381,8 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
             <div className="genresults">
               <div className="row between">
                 <b>
-                  {lineups.length} lineup{lineups.length === 1 ? '' : 's'} · best {Math.max(...lineups.map((l) => l.proj)).toFixed(1)} pts
+                  {lineups.length} lineup{lineups.length === 1 ? '' : 's'}
+                  {pro && ` · best ${Math.max(...lineups.map((l) => l.proj)).toFixed(1)} pts`}
                 </b>
                 <div className="row">
                   {hasIds && (
@@ -395,18 +400,19 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                 <p className="muted small">This player list has no FanDuel player ids, so it can't make an upload file. Use FanDuel's own "Download players list" CSV.</p>
               )}
               {lineups.length < count && <p className="muted small">Only {lineups.length} distinct lineups fit these rules and exposure limits.</p>}
+              {!pro && <ProHint>Projected points, ceilings and value for every player and lineup are Pro.</ProHint>}
               <div className="genlist">
                 {lineups.map((l, i) => (
                   <article key={i} className="card genlineup">
                     <header className="row between">
                       <div>
                         <small className="muted">Lineup {i + 1}</small>
-                        <h3>{l.proj.toFixed(1)} pts</h3>
+                        <h3>{pro ? `${l.proj.toFixed(1)} pts` : '🔒 Projection'}</h3>
                       </div>
                       <div className="pstats">
                         <span>
                           <small>Ceiling</small>
-                          <b>{l.ceiling.toFixed(0)}</b>
+                          <b>{num(l.ceiling.toFixed(0))}</b>
                         </span>
                         <span>
                           <small>Left</small>
@@ -433,7 +439,7 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                               ))}
                             </td>
                             <td className="r">{money(s.player.salary)}</td>
-                            <td className="r">{s.player.proj.toFixed(1)}</td>
+                            <td className="r">{num(s.player.proj.toFixed(1))}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -511,10 +517,10 @@ export default function Generator({ onSave }: { onSave: (l: Lineup) => void }) {
                       {p.weather && <small className="inj"> · {p.weather}</small>}
                     </td>
                     <td>{money(p.salary)}</td>
-                    <td>{p.proj.toFixed(1)}</td>
-                    <td>{p.ceiling.toFixed(0)}</td>
-                    <td>{((p.proj / p.salary) * 1000).toFixed(2)}</td>
-                    <td>{p.implied ? p.implied.toFixed(1) : '—'}</td>
+                    <td>{num(p.proj.toFixed(1))}</td>
+                    <td>{num(p.ceiling.toFixed(0))}</td>
+                    <td>{num(((p.proj / p.salary) * 1000).toFixed(2))}</td>
+                    <td>{p.implied ? num(p.implied.toFixed(1)) : '—'}</td>
                     <td>
                       <input
                         type="checkbox"

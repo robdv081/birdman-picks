@@ -4,9 +4,8 @@ import { dismissThanks, manageBilling, restoreStart, restoreVerify, upgrade, use
 const PERKS = [
   'Birdman model picks the moment they post (everyone else sees them at game time)',
   'Scout research + up to 3 Analyst picks a day, with sources',
+  "The model's numbers in every tool: hit rates, fair odds, edges, stake sizes and fantasy projections",
   'Phone alerts: new picks, line moves, and injuries in your bets and lineups',
-  'Prop parlay builder',
-  'Fantasy lineup generator',
   'Best edges of the day',
   'Full report card on your bets',
   'Stream overlay without Birdman branding',
@@ -139,5 +138,50 @@ function RestorePro() {
       </button>
       {msg && <small className="muted">{msg}</small>}
     </form>
+  );
+}
+
+/** True when the model's numbers should show: Pro members, the owner, or Pro not switched on at all. */
+export function useIsPro() {
+  return usePro().pro;
+}
+
+/** A small lock where a Pro number would be; tapping it opens checkout. */
+export function Locked({ label = 'Pro' }: { label?: string }) {
+  return (
+    <button type="button" className="prolock" onClick={upgrade} title="Unlock with Birdman Pro">
+      🔒 {label}
+    </button>
+  );
+}
+
+/** A one-line "here's what Pro adds" note with an unlock button. */
+export function ProHint({ children }: { children: ReactNode }) {
+  return (
+    <p className="prohint small">
+      <span>🔒 {children}</span>{' '}
+      <button type="button" className="linkbtn small" onClick={upgrade}>
+        Unlock with Pro
+      </button>
+    </p>
+  );
+}
+
+/** Shows a blurred preview of a Pro section (the member's own data, nothing secret) with an unlock button. */
+export function ProPeek({ what, children }: { what: string; children: ReactNode }) {
+  const p = usePro();
+  if (p.pro) return <>{children}</>;
+  return (
+    <div className="propeek">
+      <div className="propeek-inner" aria-hidden="true">
+        {children}
+      </div>
+      <div className="propeek-cta">
+        <b>🔒 {what}</b>
+        <button type="button" className="btn gold sm" onClick={upgrade}>
+          Unlock with Pro
+        </button>
+      </div>
+    </div>
   );
 }
