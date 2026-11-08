@@ -27,6 +27,9 @@ export interface Env {
   /** Lets the pick agent post picks; they're marked as the model's. */
   AGENT_KEY?: string;
   SCOUT_PUBLISH_KEY?: string;
+  /** Fine-grained GitHub token (this repo, Actions read/write) so the cron can start the agent and Scout on time. */
+  GH_DISPATCH_TOKEN?: string;
+  GH_REPO?: string;
   /** Web push (VAPID) key pair: the public key as base64url, the private key as a JWK. */
   VAPID_PUBLIC_KEY?: string;
   VAPID_PRIVATE_JWK?: string;

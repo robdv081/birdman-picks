@@ -7,6 +7,7 @@ import { createPool, getPool, joinPool, savePoolPick, settlePools } from './pick
 import * as pro from './pro';
 import { getResearch, publishResearch, scoutEnabled } from './scout';
 import * as push from './push';
+import { dispatchJobs } from './dispatch';
 import { HttpError, json, type Deps, type Env } from './util';
 
 export const liveDeps: Deps = {
@@ -100,6 +101,8 @@ export default {
   fetch: (request: Request, env: Env) => handle(request, env, liveDeps),
   scheduled: (_event: unknown, env: Env, ctx: { waitUntil(p: Promise<unknown>): void }) => {
     ctx.waitUntil(settleAll(env, liveDeps).then((r) => console.log('settled', JSON.stringify(r))));
+    // Start the pick agent and Scout on GitHub on time (GitHub's own timer is unreliable).
+    ctx.waitUntil(dispatchJobs(env, Date.now()).then((r) => console.log('dispatch', JSON.stringify(r)), (e) => console.log('dispatch failed', String(e))));
   },
 };
 
@@ -108,3 +111,4 @@ export { GENESIS, lockedFields, pickHash } from '../src/recordhash';
 
 export { assemble } from './scout';
 export { sendPushes } from './push';
+export { dispatchJobs, dueJobs } from './dispatch';

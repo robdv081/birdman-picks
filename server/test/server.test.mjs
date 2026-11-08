@@ -511,3 +511,26 @@ test('alerts: followers hear about real line moves, in plain words; dead subscri
   assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM push_subs').get().n, 0);
   assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM push_follows').get().n, 0);
 });
+
+test('the cron starts the pick agent and Scout on GitHub at their Eastern times, only with a token', async () => {
+  const at = (iso) => Date.parse(iso);
+  // Nov 8 2026 is EST (UTC-5).
+  assert.deepEqual(W.dueJobs(at('2026-11-08T17:15:30Z')), ['agent.yml'], '12:15 PM ET');
+  assert.deepEqual(W.dueJobs(at('2026-11-08T17:05:00Z')), ['scout.yml'], '12:05 PM ET');
+  assert.deepEqual(W.dueJobs(at('2026-11-09T00:15:00Z')), ['agent.yml'], '7:15 PM ET');
+  assert.deepEqual(W.dueJobs(at('2026-11-08T22:35:00Z')), ['scout.yml'], '5:35 PM ET');
+  assert.deepEqual(W.dueJobs(at('2026-11-08T17:20:00Z')), []);
+  assert.deepEqual(W.dueJobs(at('2026-11-08T08:05:00Z')), [], '3 AM ET: nothing');
+  assert.deepEqual(W.dueJobs(at('2026-07-08T16:15:00Z')), ['agent.yml'], 'summer time (UTC-4) too');
+  const calls = [];
+  const send = async (url, init) => (calls.push({ url, init }), new Response(null, { status: 204 }));
+  assert.equal((await W.dispatchJobs({}, at('2026-11-08T17:15:00Z'), send)).skipped, 'no token');
+  assert.equal(calls.length, 0);
+  const r = await W.dispatchJobs({ GH_DISPATCH_TOKEN: 'github_pat_test' }, at('2026-11-08T17:15:00Z'), send);
+  assert.deepEqual(r.started, ['agent.yml']);
+  assert.equal(calls[0].url, 'https://api.github.com/repos/robdv081/birdman-picks/actions/workflows/agent.yml/dispatches');
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer github_pat_test');
+  assert.deepEqual(JSON.parse(calls[0].init.body), { ref: 'main' });
+  const bad = await W.dispatchJobs({ GH_DISPATCH_TOKEN: 'x' }, at('2026-11-08T17:15:00Z'), async () => new Response('{}', { status: 401 }));
+  assert.deepEqual(bad.failed, ['agent.yml (401)']);
+});
