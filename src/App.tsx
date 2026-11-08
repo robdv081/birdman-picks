@@ -22,15 +22,21 @@ import { useRedZone } from './redzone';
 import { HELPLINE } from './guard';
 import { ProGate, ProNotice } from './components/Pro';
 import { startPro, usePro } from './pro';
-import { refreshPush } from './push';
+import { refreshPush, syncWatch, usePush, watchList } from './push';
+import Compete, { PlayerPage } from './components/Compete';
+import Overlay from './components/Overlay';
+import TiltCard from './components/TiltCard';
 import { scoutEnabled } from './server';
 
-type Route = { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
+type Route = { view: 'compete' } | { view: 'player'; name: string } | { view: 'overlay'; name: string } | { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
 
 function parseHash(): Route {
   const h = location.hash.replace('#', '');
   if (h === '' || h === 'today') return { view: 'today' };
   if (h === 'scout') return { view: 'scout' };
+  if (h === 'compete') return { view: 'compete' };
+  const named = h.match(/^(player|overlay)\/([A-Za-z0-9_]{3,20})$/);
+  if (named) return { view: named[1] as 'player' | 'overlay', name: named[2] };
   if (h === 'props') return { view: 'props' };
   if (h === 'bets') return { view: 'bets' };
   if (h === 'fantasy') return { view: 'fantasy' };
@@ -125,6 +131,12 @@ export default function App() {
   useEffect(() => {
     if (pro.pro && pro.checked && pro.enabled) void refreshPush();
   }, [pro.pro, pro.checked, pro.enabled]);
+  // Pro injury alerts: keep the server's list of players in open bets and lineups current.
+  const push = usePush();
+  const watchKey = push.on ? JSON.stringify(watchList(bets, lineups)) : '';
+  useEffect(() => {
+    if (watchKey) void syncWatch(JSON.parse(watchKey));
+  }, [watchKey]);
   const [scoutOn, setScoutOn] = useState(false);
   useEffect(() => {
     scoutEnabled().then(setScoutOn);
@@ -146,6 +158,9 @@ export default function App() {
   const pendingCount = bets.filter((b) => b.status === 'pending').length;
   const lastLeague = useRef<LeagueKey>('nba');
   if (route.view === 'scores') lastLeague.current = route.league;
+
+  // Stream overlay: just the panel, no app around it.
+  if (route.view === 'overlay') return <Overlay name={route.name} />;
 
   return (
     <div className={`app ${slip.length ? 'has-slip' : ''}`}>
@@ -176,6 +191,9 @@ export default function App() {
           <a className={route.view === 'pickem' ? 'on' : ''} href="#pickem">
             Pick'em
           </a>
+          <a className={route.view === 'compete' || route.view === 'player' ? 'on' : ''} href="#compete">
+            Compete
+          </a>
           {(scoutOn || route.view === 'scout') && (
             <a className={route.view === 'scout' ? 'on' : ''} href="#scout">
               Scout
@@ -202,12 +220,15 @@ export default function App() {
             <PropBuilder setSlip={setSlip} />
           </ProGate>
         )}
+        {route.view === 'bets' && <TiltCard bets={bets} />}
         {route.view === 'bets' && (
           <Bets bets={bets} setBets={setBets} lineups={lineups} setLineups={setLineups} onEdit={(b) => setDraft(b ?? {})} />
         )}
         {route.view === 'fantasy' && <Fantasy lineups={lineups} setLineups={setLineups} />}
         {route.view === 'record' && <Record />}
         {route.view === 'pickem' && <Pickem />}
+        {route.view === 'compete' && <Compete />}
+        {route.view === 'player' && <PlayerPage name={route.name} />}
       </main>
 
       <footer className="foot">

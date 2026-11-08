@@ -105,7 +105,7 @@ test('the public record chains hashes and anyone can recheck them', async () => 
   await call('POST', '/api/record/picks', pick(), owner);
   await call('POST', '/api/record/picks', pick({ eventId: '402', market: 'ml', side: 'home', odds: 135, line: null, reason: '' }), owner);
   await call('POST', '/api/record/picks', pick({ eventId: '402', market: 'total', side: 'under', line: 41.5, odds: -105 }), owner);
-  const r = await call('GET', '/api/record');
+  const r = await call('GET', '/api/record', null, owner);
   assert.equal(r.status, 200);
   const list = [...r.body.picks].reverse();
   assert.deepEqual(list.map((p) => p.seq), [1, 2, 3]);
@@ -121,7 +121,7 @@ test('the public record chains hashes and anyone can recheck them', async () => 
   }
   // Editing a pick after the fact breaks its hash.
   env.DB.raw.exec("UPDATE picks SET odds = 200 WHERE seq = 1");
-  const after = [...(await call('GET', '/api/record')).body.picks].reverse()[0];
+  const after = [...(await call('GET', '/api/record', null, owner)).body.picks].reverse()[0];
   const row = { ...after, created_at: after.createdAt, start_at: after.startAt, event_id: after.eventId };
   assert.notEqual(await pickHash(GENESIS, row), after.hash);
   assert.ok(lockedFields(row).includes('200'));
@@ -544,4 +544,151 @@ test("owner pass: the owner's key unlocks Pro research and alerts without a subs
   assert.equal((await call('GET', '/api/pro/scout', undefined, owner)).status, 200);
   assert.equal((await call('GET', '/api/pro/scout', undefined, { Authorization: 'Bearer ' + AGENT })).status, 503, 'the agent key is not a Pro pass');
   assert.equal((await call('GET', '/api/pro/status', undefined, { Authorization: 'Bearer not-the-owner-key-123' })).body.owner, undefined);
+});
+
+// ---------- sealed picks ----------
+test('sealed picks: before the start only Pro, the owner, the agent and Scout see the pick; everyone sees it lock and verify after', async () => {
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  const p = (await call('POST', '/api/record/picks', pick(), { Authorization: 'Bearer ' + AGENT })).body.pick;
+  const pub = await call('GET', '/api/record');
+  assert.equal(pub.body.sealed, true);
+  const s = pub.body.picks[0];
+  assert.equal(s.sealed, true);
+  assert.equal(s.selection, 'Locked pick');
+  assert.equal(s.odds, 0);
+  assert.equal(s.eventId, '');
+  assert.equal(s.hash, p.hash, 'the hash is public from the start');
+  assert.equal(s.league, 'nfl');
+  assert.equal(s.startAt, p.startAt);
+  assert.equal(pub.headers.get('Cache-Control'), 'private, max-age=15');
+  for (const key of [ADMIN, AGENT, 'test-scout-key-0123']) {
+    const r = await call('GET', '/api/record', null, { Authorization: 'Bearer ' + key });
+    assert.equal(r.body.picks[0].selection, 'KC +2.5', key);
+    assert.equal(r.body.sealed, false);
+  }
+  assert.equal((await call('GET', '/api/record', null, { Authorization: 'Bearer some-guess-0123456789' })).body.picks[0].sealed, true);
+  // Kickoff: revealed to everyone, and the published hash checks out.
+  clock = Date.parse('2026-11-08T18:00:01Z');
+  const after = (await call('GET', '/api/record')).body.picks[0];
+  assert.equal(after.sealed, undefined);
+  assert.equal(after.selection, 'KC +2.5');
+  const row = { seq: after.seq, id: after.id, created_at: after.createdAt, start_at: after.startAt, league: after.league, event_id: after.eventId, date: after.date, matchup: after.matchup,
+    market: after.market, side: after.side, line: after.line, odds: after.odds, selection: after.selection, player: after.player, stat: after.stat, units: after.units, reason: after.reason, author: after.author };
+  assert.equal(await pickHash(GENESIS, row), s.hash);
+});
+
+// ---------- players: verified records for everyone + the weekly contest ----------
+async function newPlayer(name = 'Rob_B') {
+  const r = await call('POST', '/api/players', { name });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  return { 'X-Player-Token': r.body.token };
+}
+
+test('players: names are unique and checked; a token is needed to post', async () => {
+  await newPlayer('Rob_B');
+  assert.equal((await call('POST', '/api/players', { name: 'rob_b' })).status, 409, 'case-insensitive');
+  assert.equal((await call('POST', '/api/players', { name: 'birdman' })).status, 400, 'reserved');
+  assert.equal((await call('POST', '/api/players', { name: 'a b' })).status, 400);
+  assert.equal((await call('POST', '/api/players/picks', { ...pick(), stake: 100 })).status, 401);
+  assert.equal((await call('POST', '/api/players/picks', { ...pick(), stake: 100 }, { 'X-Player-Token': 'x'.repeat(30) })).status, 401);
+});
+
+test('players: picks lock at kickoff, chain by hash, and spend this week\'s 1,000 points', async () => {
+  const me = await newPlayer();
+  const a = await call('POST', '/api/players/picks', { ...pick(), stake: 500 }, me);
+  assert.equal(a.status, 201, JSON.stringify(a.body));
+  assert.equal(a.body.pick.selection, 'KC +2.5');
+  assert.equal(a.body.pick.author, 'Rob_B');
+  assert.equal(a.body.week.available, 500);
+  assert.equal((await call('POST', '/api/players/picks', { ...pick(), stake: 501 }, me)).status, 400, 'max stake');
+  assert.equal((await call('POST', '/api/players/picks', { ...pick(), stake: 5 }, me)).status, 400, 'min stake');
+  const b = await call('POST', '/api/players/picks', { ...pick({ eventId: '402', market: 'ml', side: 'home', odds: 135, line: null }), stake: 300 }, me);
+  assert.equal(b.body.pick.prevHash, a.body.pick.hash);
+  const over = await call('POST', '/api/players/picks', { ...pick(), stake: 250 }, me);
+  assert.equal(over.status, 409, 'over this week\'s budget');
+  assert.match(over.body.error, /200 points left/);
+  clock = Date.parse('2026-11-08T18:00:01Z');
+  const late = await call('POST', '/api/players/picks', { ...pick(), stake: 50 }, me);
+  assert.equal(late.status, 409, JSON.stringify(late.body));
+  // Public profile, newest first, with the chain intact.
+  const prof = await call('GET', '/api/players/rob_b');
+  assert.equal(prof.status, 200);
+  assert.equal(prof.body.player.name, 'Rob_B');
+  assert.deepEqual(prof.body.picks.map((p) => p.seq), [2, 1]);
+  assert.equal(prof.body.week.week, '2026-11-02');
+  assert.equal(prof.body.week.available, 200);
+  const p1 = prof.body.picks[1];
+  const row = { seq: p1.seq, id: p1.id, created_at: p1.createdAt, start_at: p1.startAt, league: p1.league, event_id: p1.eventId, date: p1.date, matchup: p1.matchup,
+    market: p1.market, side: p1.side, line: p1.line, odds: p1.odds, selection: p1.selection, player: p1.player, stat: p1.stat, units: p1.units, reason: p1.reason, author: '' };
+  assert.equal(p1.prevHash, GENESIS);
+  assert.ok(p1.hash.length > 20);
+  assert.equal((await call('GET', '/api/players/nobody_here')).status, 404);
+  assert.equal(row.units, 500);
+});
+
+test('players: graded with the Birdman record, closing line measured, leaderboards by week points and all-time CLV', async () => {
+  const me = await newPlayer('Sharp_1');
+  const you = await newPlayer('Square_2');
+  const a = (await call('POST', '/api/players/picks', { ...pick(), stake: 100 }, me)).body.pick;
+  const b = (await call('POST', '/api/players/picks', { ...pick({ side: 'home', line: -2.5 }), stake: 100 }, you)).body.pick;
+  const own = (await call('POST', '/api/record/picks', pick({ eventId: '402', market: 'ml', side: 'home', odds: 135, line: null }), owner)).body.pick;
+  closeResults.set(a.id, { closeOdds: -125, closeLine: 2.5, closeChecked: true });
+  closeResults.set(b.id, { closeOdds: 105, closeLine: -2.5, closeChecked: true });
+  closeResults.set(own.id, { closeOdds: 150, closeChecked: true });
+  gradeResults.set(a.id, { status: 'won', finalScore: 'KC 24 – BUF 20', margin: 6.5 });
+  gradeResults.set(b.id, { status: 'lost', finalScore: 'KC 24 – BUF 20', margin: -6.5 });
+  gradeResults.set(own.id, { status: 'lost', finalScore: 'DAL 27 – NYG 10', margin: -17 });
+  clock = Date.parse('2026-11-08T22:00:00Z');
+  assert.deepEqual((await settleAll(env, deps)).record, { closed: 3, graded: 3 });
+  const lb = (await call('GET', '/api/leaderboard')).body;
+  assert.deepEqual(lb.weekly.map((r) => [r.name, r.points]), [['Sharp_1', Math.round((1000 + 100 * (100 / 110)) * 100) / 100], ['Square_2', 900]]);
+  assert.deepEqual(lb.allTime, [], 'all-time needs 10 measured closes');
+  const prof = (await call('GET', '/api/players/Sharp_1')).body;
+  assert.deepEqual([prof.summary.won, prof.summary.clvBeat, prof.summary.clvMeasured], [1, 1, 1]);
+  assert.equal(env.DB.raw.prepare('SELECT clv_beat FROM user_picks WHERE id = ?').get(b.id).clv_beat, 0);
+  assert.equal((await call('GET', '/api/record', null, owner)).body.summary.lost, 1, 'Birdman record graded in the same pass');
+  // Ten measured picks puts you on the all-time board.
+  env.DB.raw.exec("UPDATE user_picks SET clv_beat = 1");
+  const id = env.DB.raw.prepare("SELECT id FROM players WHERE name = 'Sharp_1'").get().id;
+  for (let i = 0; i < 9; i++)
+    env.DB.raw.prepare("INSERT INTO user_picks (player_id, seq, id, created_at, start_at, league, event_id, date, matchup, market, side, line, odds, selection, units, week, prev_hash, hash, status, close_checked, clv_beat) VALUES (?, ?, ?, 0, 0, 'nfl', '1', '2026-11-01', 'x', 'ml', 'home', NULL, 100, 'x', 10, '2026-10-26', 'h', 'h', 'won', 1, 1)").run(id, 10 + i, 'old' + i);
+  const all = (await call('GET', '/api/leaderboard')).body.allTime;
+  assert.equal(all[0].name, 'Sharp_1');
+  assert.equal(all[0].beatPct, 1);
+  assert.equal(all[0].measured, 10);
+});
+
+test('contest week runs Monday to Sunday, Eastern', () => {
+  assert.equal(W.contestWeek(Date.parse('2026-11-08T15:00:00Z')), '2026-11-02'); // Sunday
+  assert.equal(W.contestWeek(Date.parse('2026-11-09T04:59:00Z')), '2026-11-02'); // Sunday 11:59 PM ET
+  assert.equal(W.contestWeek(Date.parse('2026-11-09T05:00:00Z')), '2026-11-09'); // Monday midnight ET
+});
+
+test('overlay branding comes off only for Pro (or the owner)', async () => {
+  const me = await newPlayer('Streamer');
+  assert.equal((await call('GET', '/api/players/Streamer')).body.player.branded, true);
+  assert.equal((await call('POST', '/api/players/brand', {}, { ...me, Authorization: 'Bearer nope-nope-nope-nope' })).status, 503);
+  assert.equal((await call('POST', '/api/players/brand', {}, { ...me, ...owner })).status, 200);
+  assert.equal((await call('GET', '/api/players/Streamer')).body.player.branded, false);
+});
+
+// ---------- injury alerts ----------
+test('injury alerts: members watch players in their bets; Scout reports changes; only new problems alert', async () => {
+  const { auth } = await proMember();
+  await vapid();
+  env.SCOUT_PUBLISH_KEY = 'test-scout-key-0123';
+  await call('POST', '/api/push/subscribe', { ...SUB, picks: false }, auth);
+  const w = await call('POST', '/api/push/watch', { ...SUB, players: [{ league: 'nba', name: "De'Anthony Melton Jr.", label: 'Melton Over 4.5 Rebounds', until: clock + 86400_000 }, { league: 'nba', name: 'x', until: clock + 1 }] });
+  assert.equal(w.body.watching, 1);
+  assert.equal((await call('GET', '/api/push/watched')).status, 401);
+  const list = (await call('GET', '/api/push/watched', null, SCOUT)).body.players;
+  assert.deepEqual(list, [{ league: 'nba', key: 'deanthony melton' }]);
+  const report = (status) => call('POST', '/api/push/injuries', { players: [{ league: 'nba', key: 'deanthony melton', name: "De'Anthony Melton", status }] }, SCOUT);
+  assert.equal((await report('active')).body.queued, 0, 'healthy: nothing to say');
+  assert.equal((await report('Questionable')).body.queued, 1);
+  assert.equal((await report('Questionable')).body.queued, 0, 'no repeat');
+  const msg = (await call('POST', '/api/push/pull', SUB)).body.messages[0];
+  assert.equal(msg.title, "Injury: De'Anthony Melton is Questionable");
+  assert.match(msg.body, /Melton Over 4\.5 Rebounds/);
+  assert.equal((await report('Out')).body.queued, 1, 'getting worse alerts again');
 });

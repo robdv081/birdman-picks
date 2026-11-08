@@ -20,6 +20,8 @@ import SendToBook from './SendToBook';
 import { LineShopPick } from './LineShop';
 import { checkStake, HELPLINE } from '../guard';
 import { ownerKey, postRecordPick, serverReady } from '../server';
+import { currentPlayer, postPlayerPick, STAKE_RANGE } from '../players';
+import { onBreakUntil } from '../tilt';
 
 interface Props {
   draft: Partial<Bet>;
@@ -54,6 +56,9 @@ export default function BetModal({ draft, bets, slipCount, onSave, onAddLeg, onD
   const [line, setLine] = useState(draft.line != null ? String(draft.line) : '');
   const unit = load<Settings>('bp.settings', { unitSize: 0 }).unitSize;
   const owner = serverReady() && !!ownerKey();
+  const contestant = serverReady() ? currentPlayer() : null;
+  // A break the bettor chose (tilt detector): new bets wait until it's over.
+  const breakUntil = editing ? 0 : onBreakUntil();
   const canPost = linked && !isParlay && !editing && ['ml', 'spread', 'total', 'prop'].includes(draft.market ?? '');
 
   useEffect(() => {
@@ -241,7 +246,39 @@ export default function BetModal({ draft, bets, slipCount, onSave, onAddLeg, onD
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Reasoning, injury notes…" />
         </label>
 
-        {owner && canPost && valid && stakeOk && (
+        {contestant && canPost && valid && !breakUntil && (
+          <PlayerPost
+            name={contestant.name}
+            pick={{
+              league: draft.league!,
+              eventId: draft.eventId!,
+              date,
+              market,
+              side: linkedProp ? side : draft.side!,
+              line: linkedProp ? lineNum : draft.line,
+              odds: a,
+              reason: notes.trim(),
+              player: linkedProp ? player.trim() : undefined,
+              stat: linkedProp ? stat : undefined,
+            }}
+          />
+        )}
+        {!contestant && serverReady() && canPost && valid && !breakUntil && (
+          <p className="muted small">
+            Free weekly contest: <a href="#compete">pick a player name</a> to post picks like this to your own verified record.
+          </p>
+        )}
+
+        {breakUntil > 0 && (
+          <div className="card tilt calm">
+            <b>☕ You're on a break until {new Date(breakUntil).toLocaleString([], { weekday: 'short', hour: 'numeric', minute: '2-digit' })}.</b>
+            <p className="muted small">
+              You chose to pause new bets. You can end the break on the Bets tab. Need to talk? {HELPLINE}, free and 24/7.
+            </p>
+          </div>
+        )}
+
+        {owner && canPost && valid && stakeOk && !breakUntil && (
           <PostToRecord
             pick={{
               league: draft.league!,
@@ -278,7 +315,7 @@ export default function BetModal({ draft, bets, slipCount, onSave, onAddLeg, onD
               Add to parlay{slipCount > 0 && ` (${slipCount + 1})`}
             </button>
           )}
-          <button className="btn primary" disabled={!valid || !stakeOk}>
+          <button className="btn primary" disabled={!valid || !stakeOk || breakUntil > 0}>
             {editing ? 'Save' : 'Track bet'}
           </button>
         </div>
@@ -315,3 +352,37 @@ function PostToRecord({ pick }: { pick: Parameters<typeof postRecordPick>[0] }) 
 }
 
 const fmtUnitsShort = (u: number) => `${u}u`;
+
+/** Players: put this pick on your own verified record; it's also your entry in this week's contest. */
+function PlayerPost({ name, pick }: { name: string; pick: Omit<Parameters<typeof postRecordPick>[0], 'units'> }) {
+  const [stake, setStake] = useState('100');
+  const [state, setState] = useState<'idle' | 'posting' | 'done'>('idle');
+  const [msg, setMsg] = useState<string | null>(null);
+  const n = Math.round(Number(stake));
+  const ok = n >= STAKE_RANGE[0] && n <= STAKE_RANGE[1];
+  const post = async () => {
+    if (!confirm(`Post this pick to ${name}'s record for ${n} contest points? It locks now and can't be edited or deleted.`)) return;
+    setState('posting');
+    setMsg(null);
+    try {
+      const r = await postPlayerPick(pick, n);
+      setState('done');
+      setMsg(`Posted. ${Math.floor(r.week.available).toLocaleString()} points left this week.`);
+    } catch (e) {
+      setState('idle');
+      setMsg((e as Error).message);
+    }
+  };
+  return (
+    <div className="postrecord player">
+      <label className="field inline">
+        <span>Contest points</span>
+        <input inputMode="numeric" value={stake} onChange={(e) => setStake(e.target.value)} disabled={state !== 'idle'} />
+      </label>
+      <button type="button" className="btn gold" disabled={state !== 'idle' || !ok} onClick={post}>
+        {state === 'posting' ? 'Posting…' : state === 'done' ? 'On your record ✓' : 'Post to my record & contest'}
+      </button>
+      <small className="muted">{msg ?? `As ${name}. ${STAKE_RANGE[0]}–${STAKE_RANGE[1]} points of your weekly 1,000.`}</small>
+    </div>
+  );
+}

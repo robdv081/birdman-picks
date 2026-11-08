@@ -37,8 +37,9 @@ export default function ProAlerts() {
         )}
       </div>
       <p className="muted small">
-        Alerts reach your phone even with the app closed: when a new Birdman pick is posted, and when the line moves on a pick you follow (tap 🔔
-        Follow line on any pending pick in the Record tab). Prices are checked every 30 minutes.
+        Alerts reach your phone even with the app closed: when a new Birdman pick is posted, when the line moves on a pick you follow (tap 🔔
+        Follow line on any pending pick in the Record tab), and when a player in your open bets or fantasy lineups lands on the injury report.
+        Prices and injuries are checked every 30 minutes.
       </p>
       {push.on && (
         <label className="small">

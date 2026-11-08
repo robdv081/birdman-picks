@@ -65,6 +65,8 @@ export interface RecordPick {
   reason: string;
   /** 'owner' (posted by hand) or 'model' (posted by the pick agent). */
   author: string;
+  /** Before its game starts, a pick is sealed for non-members: only that it's locked, for which sport and when. */
+  sealed?: boolean;
   prevHash: string;
   hash: string;
   status: 'pending' | 'won' | 'lost' | 'push' | 'void';
@@ -85,7 +87,9 @@ export interface RecordSummary {
   clvBeat: number;
 }
 
-export const fetchRecord = () => api<{ picks: RecordPick[]; summary: RecordSummary }>('/api/record');
+/** Pro members (and the owner) get picks before their games start; everyone else sees them sealed until then. */
+export const fetchRecord = (bearer = '') =>
+  api<{ picks: RecordPick[]; summary: RecordSummary; sealed?: boolean }>('/api/record', bearer ? { headers: { Authorization: `Bearer ${bearer}` } } : {});
 
 const locked = (p: RecordPick): LockedPick => ({
   seq: p.seq,
@@ -108,16 +112,22 @@ const locked = (p: RecordPick): LockedPick => ({
   author: p.author,
 });
 
-/** Re-checks the whole chain on this phone. Returns the first broken pick number, or null if it all holds. */
-export async function verifyChain(picks: RecordPick[]): Promise<{ ok: boolean; brokenAt?: number }> {
+/**
+ * Re-checks the whole chain on this phone. A sealed pick can't be re-hashed until it's revealed, but it still has
+ * to link to the pick before it, and the next pick has to link to it.
+ */
+export async function verifyChain(picks: RecordPick[]): Promise<{ ok: boolean; brokenAt?: number; sealed: number }> {
   const inOrder = [...picks].sort((a, b) => a.seq - b.seq);
   let prev = GENESIS;
+  let sealed = 0;
   for (let i = 0; i < inOrder.length; i++) {
     const p = inOrder[i];
-    if (p.seq !== i + 1 || p.prevHash !== prev || (await pickHash(prev, locked(p))) !== p.hash) return { ok: false, brokenAt: p.seq };
+    if (p.seq !== i + 1 || p.prevHash !== prev) return { ok: false, brokenAt: p.seq, sealed };
+    if (p.sealed) sealed++;
+    else if ((await pickHash(prev, locked(p))) !== p.hash) return { ok: false, brokenAt: p.seq, sealed };
     prev = p.hash;
   }
-  return { ok: true };
+  return { ok: true, sealed };
 }
 
 const OWNER_KEY = 'bp.ownerKey';

@@ -8,6 +8,7 @@ import * as pro from './pro';
 import { getResearch, publishResearch, scoutEnabled } from './scout';
 import * as push from './push';
 import { dispatchJobs } from './dispatch';
+import * as players from './players';
 import { HttpError, json, type Deps, type Env } from './util';
 
 export const liveDeps: Deps = {
@@ -23,7 +24,7 @@ function cors(origin: string, env: Env): Record<string, string> | null {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Pool-Token',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, X-Pool-Token, X-Player-Token',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
@@ -35,7 +36,7 @@ export async function route(request: Request, env: Env, deps: Deps): Promise<Res
   const m = request.method;
 
   if (m === 'GET' && (path === '/' || path === '/api/health')) return json({ ok: true });
-  if (m === 'GET' && path === '/api/record') return getRecord(env);
+  if (m === 'GET' && path === '/api/record') return getRecord(request, env, deps, pro.requirePro);
   if (m === 'POST' && path === '/api/record/picks') return postPick(request, env, deps);
   if (m === 'GET' && path === '/api/record/owner') {
     if (!isAdmin(request, env)) throw new HttpError(401, "That owner key doesn't match.");
@@ -52,7 +53,18 @@ export async function route(request: Request, env: Env, deps: Deps): Promise<Res
   if (m === 'GET' && path === '/api/pro/scout') return getResearch(request, env, deps);
   if (m === 'POST' && path === '/api/scout/research') return publishResearch(request, env, deps);
 
+  if (m === 'POST' && path === '/api/players') return players.createPlayer(request, env, deps);
+  if (m === 'GET' && path === '/api/players/me') return players.me(request, env);
+  if (m === 'POST' && path === '/api/players/picks') return players.postPlayerPick(request, env, deps);
+  if (m === 'POST' && path === '/api/players/brand') return players.setBrand(request, env, deps, pro.requirePro);
+  if (m === 'GET' && path === '/api/leaderboard') return players.leaderboard(env, deps);
+  const pl = path.match(/^\/api\/players\/([A-Za-z0-9_]{3,20})$/);
+  if (pl && m === 'GET') return players.getPlayer(env, deps, pl[1]);
+
   if (m === 'GET' && path === '/api/push/key') return push.pushKey(env);
+  if (m === 'POST' && path === '/api/push/watch') return push.watch(request, env, deps);
+  if (m === 'GET' && path === '/api/push/watched') return push.watched(request, env, deps);
+  if (m === 'POST' && path === '/api/push/injuries') return push.injuries(request, env, deps);
   if (m === 'POST' && path === '/api/push/subscribe') return push.subscribe(request, env, deps);
   if (m === 'POST' && path === '/api/push/unsubscribe') return push.unsubscribe(request, env);
   if (m === 'POST' && path === '/api/push/follow') return push.follow(request, env, deps);
@@ -112,3 +124,4 @@ export { GENESIS, lockedFields, pickHash } from '../src/recordhash';
 export { assemble } from './scout';
 export { sendPushes } from './push';
 export { dispatchJobs, dueJobs } from './dispatch';
+export { contestWeek } from './players';

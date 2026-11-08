@@ -71,7 +71,8 @@ async function main() {
   let taken = new Set<string>();
   let postedToday = 0;
   if (SERVER) {
-    const res = await fetch(`${SERVER}/api/record`);
+    // The agent's key shows picks whose games haven't started (they're sealed for the public).
+    const res = await fetch(`${SERVER}/api/record`, { headers: KEY ? { Authorization: `Bearer ${KEY}` } : {} });
     if (!res.ok) throw new Error(`Couldn't read the record: ${res.status}`);
     const { picks } = (await res.json()) as { picks: { eventId: string; date: string; author: string }[] };
     const todays = picks.filter((p) => p.date === today);

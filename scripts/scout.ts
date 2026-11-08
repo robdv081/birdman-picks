@@ -11,6 +11,7 @@ import { fetchInjuries, fetchScoreboard, LEAGUES, type Game, type Injury, type L
 import { scanProps, candidateLabel, type Candidate } from '../src/propgen';
 import { MODEL_NAME, scanGameLines } from '../src/gamelines';
 import { fmtAmerican, fmtLine } from '../src/bets';
+import { playerKey } from '../src/names';
 import { breakEven, type AnalystPick, type Evidence, type GameResearch, type ScoutFeed, type ScoutLeague, type ScoutSubmission } from '../src/scout';
 
 const PROP_LEAGUES: ScoutLeague[] = ['nba', 'nhl', 'nfl'];
@@ -265,7 +266,8 @@ async function main() {
   // Today's public record: which games the pick agent already took, and pending picks to price for alerts.
   let record: RecordPick[] = [];
   if (SERVER) {
-    const res = await fetch(`${SERVER}/api/record`);
+    // The publisher key shows picks whose games haven't started (they're sealed for the public).
+    const res = await fetch(`${SERVER}/api/record`, { headers: KEY ? { Authorization: `Bearer ${KEY}` } : {} });
     if (res.ok) record = ((await res.json()) as { picks: RecordPick[] }).picks;
   }
 
@@ -359,6 +361,17 @@ async function main() {
   console.log(`Published: ${out.report.status}, ${out.report.candidates} pick(s).`);
   for (const p of out.report.passes.slice(passes.length)) console.log(`  server passed: ${p.event} — ${p.reason}`);
   if (moves.length) console.log(`Price updates sent: ${JSON.stringify(await post('/api/push/moves', { moves }))}`);
+
+  // ---- Injury alerts: the current ESPN status of every player a Pro member is watching ----
+  const watchedRes = await fetch(`${SERVER}/api/push/watched`, { headers: { Authorization: `Bearer ${KEY}` } });
+  const watchedList = watchedRes.ok ? ((await watchedRes.json()) as { players: { league: string; key: string }[] }).players : [];
+  const statuses = watchedList.flatMap((w) => {
+    const d = data.find((x) => x.league === w.league);
+    if (!d?.injuries) return []; // no report for this league right now: say nothing rather than "healthy"
+    const hit = Object.values(d.injuries).flat().find((i) => playerKey(i.player) === w.key);
+    return [{ league: w.league, key: w.key, name: hit?.player ?? w.key, status: hit?.status ?? 'active' }];
+  });
+  if (statuses.length) console.log(`Injury check for ${statuses.length} watched player(s): ${JSON.stringify(await post('/api/push/injuries', { players: statuses }))}`);
   console.log(`Done in ${((Date.now() - started) / 1000).toFixed(0)}s.`);
 }
 

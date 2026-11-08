@@ -5,6 +5,7 @@
 // who it is with the subscription's own auth secret. So nothing readable crosses the push service, and the server
 // needs no payload encryption: only a signed VAPID token (ES256) per push service.
 import { breakEven } from '../src/scout';
+import { isAlertStatus, playerKey } from '../src/names';
 import { requirePro } from './pro';
 import { b64url, bearer, HttpError, json, readJson, sha256, str, timingSafeEqual, type Deps, type Env } from './util';
 
@@ -70,6 +71,7 @@ export async function unsubscribe(request: Request, env: Env) {
   const id = await subFrom(env, await readJson(request));
   await env.DB.batch([
     env.DB.prepare('DELETE FROM push_follows WHERE sub_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM push_watch WHERE sub_id = ?').bind(id),
     env.DB.prepare('DELETE FROM push_outbox WHERE sub_id = ?').bind(id),
     env.DB.prepare('DELETE FROM push_subs WHERE id = ?').bind(id),
   ]);
@@ -212,6 +214,7 @@ export async function sendPushes(env: Env, deps: Deps, send: typeof fetch = fetc
     env.DB.prepare('DELETE FROM push_outbox WHERE created_at < ? OR sub_id NOT IN (SELECT id FROM push_subs)').bind(now - OUTBOX_TTL_MS),
     env.DB.prepare('DELETE FROM push_follows WHERE sub_id NOT IN (SELECT id FROM push_subs) OR pick_id NOT IN (SELECT id FROM picks WHERE status = ?)').bind('pending'),
     env.DB.prepare('DELETE FROM push_subs WHERE seen_at < ?').bind(now - SUB_TTL_MS),
+    env.DB.prepare('DELETE FROM push_watch WHERE until < ? OR sub_id NOT IN (SELECT id FROM push_subs)').bind(now),
   ]);
   await queueNewPicks(env, now);
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_JWK) return { sent: 0, gone: 0 };
@@ -245,9 +248,86 @@ export async function sendPushes(env: Env, deps: Deps, send: typeof fetch = fetc
       await env.DB.batch([
         env.DB.prepare('DELETE FROM push_outbox WHERE sub_id = ?').bind(s.id),
         env.DB.prepare('DELETE FROM push_follows WHERE sub_id = ?').bind(s.id),
+        env.DB.prepare('DELETE FROM push_watch WHERE sub_id = ?').bind(s.id),
         env.DB.prepare('DELETE FROM push_subs WHERE id = ?').bind(s.id),
       ]);
     } else await env.DB.prepare('UPDATE push_subs SET fails = fails + 1 WHERE id = ?').bind(s.id).run();
   }
   return { sent, gone };
+}
+
+// ---------- injury alerts (players in a member's open bets and lineups) ----------
+
+const WATCH_MAX = 60;
+
+/** POST /api/push/watch — the phone's list of players to watch; replaces the old list. */
+export async function watch(request: Request, env: Env, deps: Deps) {
+  const b = await readJson(request, 32_000);
+  const id = await subFrom(env, b);
+  const now = deps.now();
+  const list = (Array.isArray(b.players) ? b.players : [])
+    .slice(0, WATCH_MAX)
+    .map((x) => x as Obj)
+    .map((x) => ({ league: str(x.league, 10), key: playerKey(str(x.name, 60)), label: str(x.label, 120), until: Math.min(Number(x.until) || 0, now + 8 * 86400_000) }))
+    .filter((x) => x.league && x.key.length >= 3 && x.until > now);
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM push_watch WHERE sub_id = ?').bind(id),
+    ...list.map((x) =>
+      env.DB.prepare('INSERT OR REPLACE INTO push_watch (sub_id, league, player_key, label, until) VALUES (?, ?, ?, ?, ?)').bind(id, x.league, x.key, x.label || 'your bet', x.until)
+    ),
+  ]);
+  return json({ watching: list.length });
+}
+
+const publisher = (request: Request, env: Env) => {
+  const key = bearer(request);
+  if (!env.SCOUT_PUBLISH_KEY || !key || !timingSafeEqual(key, env.SCOUT_PUBLISH_KEY)) throw new HttpError(401, 'Scout publisher key required.');
+};
+
+/** GET /api/push/watched — for the Scout publisher: which players any current member is watching. */
+export async function watched(request: Request, env: Env, deps: Deps) {
+  publisher(request, env);
+  const now = deps.now();
+  const rows = await env.DB.prepare(
+    'SELECT DISTINCT w.league, w.player_key FROM push_watch w JOIN push_subs s ON s.id = w.sub_id WHERE w.until > ? AND s.pro_until > ? LIMIT 500'
+  )
+    .bind(now, now)
+    .all<{ league: string; player_key: string }>();
+  return json({ players: rows.results.map((r) => ({ league: r.league, key: r.player_key })) });
+}
+
+/**
+ * POST /api/push/injuries — from the Scout publisher: the current ESPN status of each watched player ('active' when
+ * they're off the report). A change to out, doubtful or questionable alerts everyone watching that player.
+ */
+export async function injuries(request: Request, env: Env, deps: Deps) {
+  publisher(request, env);
+  const b = await readJson(request, 64_000);
+  const now = deps.now();
+  const appUrl = (env.APP_URL || '').replace(/#.*$/, '');
+  let queued = 0;
+  for (const raw of (Array.isArray(b.players) ? b.players : []).slice(0, 500) as Obj[]) {
+    const league = str(raw.league, 10);
+    const key = playerKey(str(raw.key ?? raw.name, 60));
+    const status = str(raw.status, 40) || 'active';
+    const name = str(raw.name, 60) || key;
+    if (!league || !key) continue;
+    const prev = await env.DB.prepare('SELECT status FROM injury_state WHERE league = ? AND player_key = ?').bind(league, key).first<{ status: string }>();
+    if (prev?.status === status) continue;
+    await env.DB.prepare('INSERT OR REPLACE INTO injury_state (league, player_key, status, updated_at) VALUES (?, ?, ?, ?)').bind(league, key, status, now).run();
+    // First sighting of a player who's fine: just remember it. A new problem, or the first sighting of one: alert.
+    if (!isAlertStatus(status)) continue;
+    const who = await env.DB.prepare(
+      'SELECT w.sub_id, w.label FROM push_watch w JOIN push_subs s ON s.id = w.sub_id WHERE w.league = ? AND w.player_key = ? AND w.until > ? AND s.pro_until > ?'
+    )
+      .bind(league, key, now, now)
+      .all<{ sub_id: string; label: string }>();
+    for (const w of who.results) {
+      await env.DB.prepare('INSERT INTO push_outbox (sub_id, created_at, title, body, url, tag) VALUES (?, ?, ?, ?, ?, ?)')
+        .bind(w.sub_id, now, `Injury: ${name} is ${status}`, `On ESPN's injury report now. It affects ${w.label}.`, appUrl + '#bets', `injury-${league}-${key}`)
+        .run();
+      queued++;
+    }
+  }
+  return json({ queued });
 }

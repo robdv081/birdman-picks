@@ -2,12 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { dismissThanks, manageBilling, restoreStart, restoreVerify, upgrade, usePro } from '../pro';
 
 const PERKS = [
+  'Birdman model picks the moment they post (everyone else sees them at game time)',
   'Scout research + up to 3 Analyst picks a day, with sources',
-  'Phone alerts for new picks and line moves',
+  'Phone alerts: new picks, line moves, and injuries in your bets and lineups',
   'Prop parlay builder',
   'Fantasy lineup generator',
   'Best edges of the day',
   'Full report card on your bets',
+  'Stream overlay without Birdman branding',
 ];
 
 /** Shows its children to Pro members; everyone else sees what the feature does and how to unlock it. */

@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { api, SERVER_URL, serverReady } from './server';
 import { load, save } from './store';
 import { proBearer } from './pro';
+import type { Bet } from './bets';
+import { TEMPLATES, type Lineup } from './fantasy';
 
 const STATE_KEY = 'bp.push';
 
@@ -138,5 +140,54 @@ export async function refreshPush() {
     const msg = (e as Error).message;
     // Pro lapsed: the server says so, and alerts stop.
     if (/Pro/.test(msg)) set({ on: false, following: [], error: msg });
+  }
+}
+
+// ---------- injury alerts: players in open bets and fantasy lineups ----------
+
+export interface Watched {
+  league: string;
+  name: string;
+  label: string;
+  until: number;
+}
+
+/** Players worth watching: in pending bets (props and parlay legs) and in lineups for today or later. */
+export function watchList(bets: Bet[], lineups: Lineup[], now = Date.now()): Watched[] {
+  const out = new Map<string, Watched>();
+  const until = (ymd: string) => Date.parse(`${ymd}T12:00:00Z`) + 36 * 3600_000;
+  const add = (w: Watched) => {
+    const k = `${w.league}|${w.name.toLowerCase()}`;
+    if (w.until > now && w.name.trim() && !out.has(k)) out.set(k, w);
+  };
+  for (const b of bets) {
+    if (b.status !== 'pending') continue;
+    if (b.player && b.league) add({ league: b.league, name: b.player, label: b.selection, until: until(b.date) });
+    for (const l of b.legs ?? []) if (l.player && l.league && l.status === 'pending') add({ league: l.league, name: l.player, label: `your parlay (${l.selection})`, until: until(l.date) });
+  }
+  const today = new Date(now - 6 * 3600_000).toISOString().slice(0, 10);
+  for (const lu of lineups) {
+    if (lu.date < today) continue;
+    const league = TEMPLATES.find((t) => t.id === lu.templateId)?.league;
+    if (!league) continue;
+    for (const s of lu.slots) if (s.player && !/^(DEF|DST)$/.test(s.slot)) add({ league, name: s.player, label: `your lineup "${lu.title}"`, until: until(lu.date) });
+  }
+  return [...out.values()].slice(0, 60);
+}
+
+let lastWatch = '';
+/** Sends the watch list when it changes (Pro alerts must be on). */
+export async function syncWatch(list: Watched[]) {
+  if (!state.on) return;
+  const key = JSON.stringify(list.map((w) => [w.league, w.name, w.label]));
+  if (key === lastWatch) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    const sub = await reg.pushManager.getSubscription();
+    if (!sub) return;
+    await api('/api/push/watch', { method: 'POST', body: { endpoint: sub.endpoint, auth: authOf(sub), players: list } });
+    lastWatch = key;
+  } catch {
+    /* try again next change */
   }
 }

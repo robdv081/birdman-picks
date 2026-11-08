@@ -51,20 +51,34 @@ export function poster(request: Request, env: Env): 'owner' | 'model' | null {
 
 export const isAdmin = (request: Request, env: Env) => poster(request, env) === 'owner';
 
-/** POST /api/record/picks — owner only. */
-export async function postPick(request: Request, env: Env, deps: Deps) {
-  const author = poster(request, env);
-  if (!author) throw new HttpError(401, 'Owner key required.');
-  const b = await readJson(request);
+/** The checked, locked fields of a new pick, shared by the Birdman record and players' records. */
+export interface PickCore {
+  start_at: number;
+  league: string;
+  event_id: string;
+  date: string;
+  matchup: string;
+  market: string;
+  side: string;
+  line: number | null;
+  odds: number;
+  selection: string;
+  player: string | null;
+  stat: string | null;
+}
+
+/**
+ * Checks a pick against ESPN: a real game that hasn't started (by the server's clock and ESPN's state, never the
+ * phone's), a real market and side, an American price. Builds the label the same way for everyone.
+ */
+export async function validatePick(b: Record<string, unknown>, deps: Deps): Promise<PickCore> {
   const league = str(b.league, 20) as LeagueKey;
   const eventId = str(b.eventId, 30);
   const date = str(b.date, 10);
   const market = str(b.market, 10) as Market;
   const side = str(b.side, 10) as BetSide;
   const odds = Number(b.odds);
-  const units = Number(b.units ?? 1);
   const line = b.line == null || b.line === '' ? null : Number(b.line);
-  const reason = str(b.reason, 600);
   const player = market === 'prop' ? str(b.player, 60) : '';
   const stat = market === 'prop' ? str(b.stat, 20) : '';
 
@@ -75,16 +89,13 @@ export async function postPick(request: Request, env: Env, deps: Deps) {
     market === 'ml' ? (isThreeWay(league) ? ['home', 'away', 'draw'] : ['home', 'away']) : market === 'spread' ? ['home', 'away'] : ['over', 'under'];
   if (!sides.includes(side)) throw new HttpError(400, 'Pick a side.');
   if (!Number.isInteger(odds) || Math.abs(odds) < 100 || Math.abs(odds) > 100000) throw new HttpError(400, 'Odds must be American, like -110 or +150.');
-  if (!Number.isFinite(units) || units < 0.1 || units > 10) throw new HttpError(400, 'Stake must be 0.1 to 10 units.');
   if ((market === 'spread' || market === 'total' || market === 'prop') && (line == null || !Number.isFinite(line))) throw new HttpError(400, 'This pick needs a line.');
   if (market === 'prop' && (!player || !PROP_STATS[league]?.some((s) => s.key === stat))) throw new HttpError(400, 'Props need a player and a stat.');
 
-  // The server's own look at the game decides whether it has started; the phone's clock doesn't count.
   const game = (await deps.games(league, date)).find((g) => g.id === eventId);
   if (!game) throw new HttpError(404, "Couldn't find that game on ESPN.");
   const startAt = Date.parse(game.start);
-  const now = deps.now();
-  if (game.state !== 'pre' || !(startAt > now)) throw new HttpError(409, 'That game has started. Picks lock at kickoff.');
+  if (game.state !== 'pre' || !(startAt > deps.now())) throw new HttpError(409, 'That game has started. Picks lock at kickoff.');
 
   const matchup = LEAGUES[league].kind === 'versus' ? `${game.away.name} vs ${game.home.name}` : `${game.away.abbr} @ ${game.home.abbr}`;
   const team = side === 'home' ? game.home : side === 'away' ? game.away : null;
@@ -97,24 +108,26 @@ export async function postPick(request: Request, env: Env, deps: Deps) {
         : market === 'total'
           ? `${matchup} ${side === 'over' ? 'Over' : 'Under'} ${line}`
           : `${player} ${side === 'over' ? 'Over' : 'Under'} ${line} ${PROP_STATS[league]!.find((s) => s.key === stat)!.label}`;
+  return { start_at: startAt, league, event_id: eventId, date, matchup, market, side, line, odds, selection, player: player || null, stat: stat || null };
+}
+
+/** POST /api/record/picks — the owner or the pick agent. */
+export async function postPick(request: Request, env: Env, deps: Deps) {
+  const author = poster(request, env);
+  if (!author) throw new HttpError(401, 'Owner key required.');
+  const b = await readJson(request);
+  const units = Number(b.units ?? 1);
+  const reason = str(b.reason, 600);
+  if (!Number.isFinite(units) || units < 0.1 || units > 10) throw new HttpError(400, 'Stake must be 0.1 to 10 units.');
+  const core = await validatePick(b, deps);
+  const now = deps.now();
 
   const last = await env.DB.prepare('SELECT seq, hash FROM picks ORDER BY seq DESC LIMIT 1').first<{ seq: number; hash: string }>();
   const row = {
     seq: (last?.seq ?? 0) + 1,
     id: crypto.randomUUID(),
     created_at: now,
-    start_at: startAt,
-    league,
-    event_id: eventId,
-    date,
-    matchup,
-    market,
-    side,
-    line,
-    odds,
-    selection,
-    player: player || null,
-    stat: stat || null,
+    ...core,
     units: Math.round(units * 10) / 10,
     reason,
     author,
@@ -212,25 +225,68 @@ export function summarizeRecord(rows: PickRow[]) {
   return { won, lost, push, pending, units: round(units), roi: staked ? round(units / staked) : 0, clvMeasured, clvBeat };
 }
 
-/** GET /api/record — public. */
-export async function getRecord(env: Env) {
-  const { results } = await env.DB.prepare('SELECT * FROM picks ORDER BY seq ASC').all<PickRow>();
-  return json(
-    { picks: results.map(publicPick).reverse(), summary: summarizeRecord(results), genesis: GENESIS },
-    200,
-    { 'Cache-Control': 'public, max-age=30' }
+/**
+ * A pick before its game starts, as everyone but Pro members sees it: that a pick is locked, for which sport and
+ * start time, with its hash. The pick itself shows at the start, and its hash proves it wasn't changed.
+ */
+export function sealedPick(r: PickRow) {
+  return {
+    ...publicPick(r),
+    sealed: true,
+    eventId: '',
+    matchup: '',
+    market: '',
+    side: '',
+    line: null,
+    odds: 0,
+    selection: 'Locked pick',
+    player: null,
+    stat: null,
+    reason: '',
+  };
+}
+
+/** Who sees picks before their games start: the owner, the pick agent, the Scout publisher and Pro members. */
+async function seesSealed(request: Request, env: Env, isPro: (r: Request, e: Env) => Promise<unknown>) {
+  if (poster(request, env)) return true;
+  const key = bearer(request);
+  if (!key) return false;
+  if (strong(env.SCOUT_PUBLISH_KEY) && timingSafeEqual(key, env.SCOUT_PUBLISH_KEY!)) return true;
+  return isPro(request, env).then(
+    () => true,
+    () => false
   );
 }
 
-/** Every few minutes: record closing lines once games start, and grade finished games. */
+/** GET /api/record — public; picks whose games haven't started are sealed except for Pro members. */
+export async function getRecord(request: Request, env: Env, deps: Deps, isPro: (r: Request, e: Env) => Promise<unknown>) {
+  const { results } = await env.DB.prepare('SELECT * FROM picks ORDER BY seq ASC').all<PickRow>();
+  const now = deps.now();
+  const anySealed = results.some((r) => r.start_at > now);
+  const full = anySealed && (await seesSealed(request, env, isPro));
+  const picks = results.map((r) => (r.start_at > now && !full ? sealedPick(r) : publicPick(r))).reverse();
+  return json({ picks, summary: summarizeRecord(results), genesis: GENESIS, sealed: anySealed && !full }, 200, {
+    'Cache-Control': 'private, max-age=15',
+    Vary: 'Authorization',
+  });
+}
+
+/**
+ * Every few minutes: record closing lines once games start, and grade finished games, for the Birdman record and
+ * players' records together (one look at each scoreboard). Players' picks also store whether they beat the close.
+ */
 export async function settleRecord(env: Env, deps: Deps) {
   const now = deps.now();
-  const { results } = await env.DB.prepare(
-    // Closing lines are only worth chasing for a few days after kickoff.
-    "SELECT * FROM picks WHERE start_at <= ? AND (status = 'pending' OR (close_checked = 0 AND start_at > ?)) ORDER BY seq LIMIT 200"
-  )
-    .bind(now, now - 3 * 86400_000)
-    .all<PickRow>();
+  // Closing lines are only worth chasing for a few days after kickoff.
+  const due = "WHERE start_at <= ? AND (status = 'pending' OR (close_checked = 0 AND start_at > ?)) ORDER BY start_at LIMIT 200";
+  const [own, theirs] = await Promise.all([
+    env.DB.prepare(`SELECT * FROM picks ${due}`).bind(now, now - 3 * 86400_000).all<PickRow>(),
+    env.DB.prepare(`SELECT * FROM user_picks ${due}`).bind(now, now - 3 * 86400_000).all<PickRow>(),
+  ]);
+  const table = new Map<string, string>();
+  for (const r of own.results) table.set(r.id, 'picks');
+  for (const r of theirs.results) table.set(r.id, 'user_picks');
+  const results = [...own.results, ...theirs.results];
   if (!results.length) return { closed: 0, graded: 0 };
   const bets = results.map(toBet);
 
@@ -241,17 +297,26 @@ export async function settleRecord(env: Env, deps: Deps) {
   for (const [id, c] of closes) {
     if (!c.closeChecked) continue;
     closed++;
-    stmts.push(
-      env.DB.prepare('UPDATE picks SET close_odds = ?, close_line = ?, close_checked = 1 WHERE id = ? AND close_checked = 0').bind(
-        c.closeOdds ?? null, c.closeLine ?? null, id)
-    );
+    const t = table.get(id);
+    if (t === 'user_picks') {
+      const b = bets.find((x) => x.id === id)!;
+      const v = clv({ ...b, closeOdds: c.closeOdds, closeLine: c.closeLine, closeChecked: true });
+      stmts.push(
+        env.DB.prepare('UPDATE user_picks SET close_odds = ?, close_line = ?, close_checked = 1, clv_beat = ? WHERE id = ? AND close_checked = 0').bind(
+          c.closeOdds ?? null, c.closeLine ?? null, v ? (v.beat ? 1 : 0) : null, id)
+      );
+    } else
+      stmts.push(
+        env.DB.prepare('UPDATE picks SET close_odds = ?, close_line = ?, close_checked = 1 WHERE id = ? AND close_checked = 0').bind(
+          c.closeOdds ?? null, c.closeLine ?? null, id)
+      );
   }
   const grades = await deps.grade(bets.filter((b) => b.status === 'pending'));
   for (const [id, g] of grades) {
     if (!g.status || g.status === 'pending') continue;
     graded++;
     stmts.push(
-      env.DB.prepare("UPDATE picks SET status = ?, final_score = ?, margin = ?, graded_at = ? WHERE id = ? AND status = 'pending'").bind(
+      env.DB.prepare(`UPDATE ${table.get(id) === 'user_picks' ? 'user_picks' : 'picks'} SET status = ?, final_score = ?, margin = ?, graded_at = ? WHERE id = ? AND status = 'pending'`).bind(
         g.status, g.finalScore ?? null, g.margin ?? null, now, id)
     );
   }

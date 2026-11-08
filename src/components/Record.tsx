@@ -13,7 +13,7 @@ import {
 } from '../server';
 import { fmtDate } from '../store';
 import ProAlerts, { FollowButton } from './ProAlerts';
-import { refreshPro } from '../pro';
+import { proBearer, refreshPro, upgrade, usePro } from '../pro';
 
 type Filter = 'all' | 'pending' | 'settled';
 
@@ -40,7 +40,8 @@ function lead(ms: number) {
 export default function Record() {
   const [data, setData] = useState<{ picks: RecordPick[]; summary: RecordSummary } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [chain, setChain] = useState<{ ok: boolean; brokenAt?: number } | null>(null);
+  const [chain, setChain] = useState<{ ok: boolean; brokenAt?: number; sealed: number } | null>(null);
+  const pro = usePro();
   const [filter, setFilter] = useState<Filter>('all');
   const [owner, setOwner] = useState(!!ownerKey());
 
@@ -48,7 +49,7 @@ export default function Record() {
     if (!serverReady()) return;
     let live = true;
     const get = () =>
-      fetchRecord().then(
+      fetchRecord(pro.pro ? proBearer() : '').then(
         async (d) => {
           if (!live) return;
           setData(d);
@@ -64,7 +65,7 @@ export default function Record() {
       live = false;
       clearInterval(t);
     };
-  }, []);
+  }, [pro.pro]);
 
   const shown = useMemo(
     () => (data?.picks ?? []).filter((p) => (filter === 'all' ? true : filter === 'pending' ? p.status === 'pending' : p.status !== 'pending')),
@@ -116,7 +117,7 @@ export default function Record() {
               {chain == null
                 ? 'Checking the record on your phone…'
                 : chain.ok
-                  ? `✓ Verified: all ${data!.picks.length} picks intact`
+                  ? `✓ Verified: all ${data!.picks.length} picks intact${chain.sealed ? ` (${chain.sealed} sealed until game time)` : ''}`
                   : `⚠ Pick #${chain.brokenAt} doesn't match its fingerprint`}
             </b>
             <p className="muted small">
@@ -157,7 +158,39 @@ export default function Record() {
   );
 }
 
+/** A pick before its game starts, as non-members see it. */
+function SealedCard({ p }: { p: RecordPick }) {
+  const pro = usePro();
+  return (
+    <li className="card rpick sealed">
+      <div className="row between">
+        <div className="rmain">
+          <b>🔒 Locked pick</b>
+          <small className="muted">
+            #{p.seq} · {LEAGUES[p.league]?.label ?? p.league} · starts {when(p.startAt)}
+            {p.author === 'model' && <span className="pill model">Model pick</span>}
+          </small>
+        </div>
+        <div className="rside">
+          <b>?</b>
+          <small className="muted">{p.units}u</small>
+        </div>
+      </div>
+      <p className="muted small">
+        Locked {lead(p.startAt - p.createdAt)} before the start and revealed to everyone when the game starts. Its fingerprint (
+        <code>{p.hash.slice(0, 10)}…</code>) proves it can't change. Pro members see it now, with an alert when it's posted.
+      </p>
+      {pro.enabled && !pro.pro && (
+        <button className="btn gold sm" onClick={upgrade}>
+          See it now with Pro
+        </button>
+      )}
+    </li>
+  );
+}
+
 function PickCard({ p }: { p: RecordPick }) {
+  if (p.sealed) return <SealedCard p={p} />;
   const c = clv(asSel(p));
   return (
     <li className={`card rpick ${p.status}`}>
