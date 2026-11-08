@@ -6,6 +6,7 @@
 // stakes some of them. Leaderboards rank the week by points and all time by how often players beat the close.
 import { GENESIS, pickHash } from '../src/recordhash';
 import { profit } from '../src/bets';
+import { bump } from './stats';
 import { publicPick, summarizeRecord, toBet, validatePick, type PickRow } from './record';
 import { HttpError, b64url, json, readJson, sha256, str, timingSafeEqual, type Deps, type Env } from './util';
 
@@ -59,6 +60,7 @@ export async function createPlayer(request: Request, env: Env, deps: Deps) {
   } catch {
     throw new HttpError(409, 'That name is taken.');
   }
+  await bump(env, deps.now(), 'player_created');
   return json({ player: { id, name }, token }, 201);
 }
 
@@ -105,6 +107,7 @@ export async function postPlayerPick(request: Request, env: Env, deps: Deps) {
   } catch {
     throw new HttpError(409, 'Another pick was posted at the same moment. Try again.');
   }
+  await bump(env, now, 'player_pick');
   const full: PickRow = { ...row, prev_hash: prev, hash, status: 'pending', final_score: null, margin: null, close_odds: null, close_line: null, close_checked: 0, graded_at: null };
   return json({ pick: { ...publicPick(full), author: me.name }, week: { ...ws, available: ws.available - stake, open: ws.open + stake } }, 201);
 }

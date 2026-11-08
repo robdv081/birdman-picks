@@ -692,3 +692,20 @@ test('injury alerts: members watch players in their bets; Scout reports changes;
   assert.match(msg.body, /Melton Over 4\.5 Rebounds/);
   assert.equal((await report('Out')).body.queued, 1, 'getting worse alerts again');
 });
+
+// ---------- visitor stats ----------
+test('stats: visits count once each as daily totals, junk is cleaned, bots dropped, owner-only report with actions', async () => {
+  await call('POST', '/api/hit', { source: 'TikTok', medium: 'social', landing: 'compete', device: 'mobile', returning: false });
+  await call('POST', '/api/hit', { source: 'tiktok', medium: 'social', landing: 'compete', device: 'mobile', returning: false });
+  await call('POST', '/api/hit', { source: 'bad source!!', device: 'toaster', returning: true });
+  await call('POST', '/api/hit', { source: 'google' }, { 'User-Agent': 'Googlebot/2.1' });
+  await call('POST', '/api/players', { name: 'Fan_1' });
+  assert.equal((await call('GET', '/api/stats')).status, 401);
+  const s = (await call('GET', '/api/stats?days=7', null, owner)).body;
+  assert.deepEqual(s.daily, [{ day: '2026-11-08', visits: 3, new: 2 }]);
+  assert.deepEqual(s.sources[0], { source: 'tiktok', medium: 'social', visits: 2, new: 2 });
+  assert.equal(s.sources[1].source, 'direct');
+  assert.deepEqual(s.devices.map((d) => d.device).sort(), ['mobile', 'other']);
+  assert.equal(s.events.player_created, 1);
+  assert.equal(env.DB.raw.prepare('SELECT COUNT(*) n FROM visits').get().n, 2, 'one row per combination, not per visit');
+});

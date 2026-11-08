@@ -1,6 +1,7 @@
 // Birdman Picks Pro: confirms Stripe Payment Link purchases, hands the app a signed token, checks the
 // subscription is still active, restores Pro on a new device by emailed code, and opens Stripe's billing page.
 import { isAdmin } from './record';
+import { bump } from './stats';
 import { b64url, bearer, fromB64url, HttpError, json, readJson, sha256, str, timingSafeEqual, type Deps, type Env } from './util';
 
 const STRIPE = 'https://api.stripe.com/v1';
@@ -24,6 +25,7 @@ export async function claim(request: Request, env: Env) {
   if (!paid || typeof s.customer !== 'string') throw new HttpError(402, "That checkout isn't finished yet.");
   const pro = await customerIsPro(env, s.customer);
   if (!pro.active) throw new HttpError(402, 'No active Pro subscription on that checkout.');
+  await bump(env, Date.now(), 'pro_claim');
   return json({ token: await makeToken(env, s.customer), pro: true, renews: pro.renews });
 }
 

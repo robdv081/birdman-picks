@@ -84,4 +84,4 @@ export const removeBranding = () =>
 export const playersReady = () => serverReady();
 
 export const overlayUrl = (name: string) => `${location.origin}${location.pathname}#overlay/${encodeURIComponent(name)}`;
-export const profileUrl = (name: string) => `${location.origin}${location.pathname}#player/${encodeURIComponent(name)}`;
+export const profileUrl = (name: string) => `${location.origin}${location.pathname}?s=profile#player/${encodeURIComponent(name)}`;

@@ -9,6 +9,7 @@ import { getResearch, publishResearch, scoutEnabled } from './scout';
 import * as push from './push';
 import { dispatchJobs } from './dispatch';
 import * as players from './players';
+import * as stats from './stats';
 import { HttpError, json, type Deps, type Env } from './util';
 
 export const liveDeps: Deps = {
@@ -60,6 +61,9 @@ export async function route(request: Request, env: Env, deps: Deps): Promise<Res
   if (m === 'GET' && path === '/api/leaderboard') return players.leaderboard(env, deps);
   const pl = path.match(/^\/api\/players\/([A-Za-z0-9_]{3,20})$/);
   if (pl && m === 'GET') return players.getPlayer(env, deps, pl[1]);
+
+  if (m === 'POST' && path === '/api/hit') return stats.hit(request, env, deps);
+  if (m === 'GET' && path === '/api/stats') return stats.stats(request, env, deps);
 
   if (m === 'GET' && path === '/api/push/key') return push.pushKey(env);
   if (m === 'POST' && path === '/api/push/watch') return push.watch(request, env, deps);

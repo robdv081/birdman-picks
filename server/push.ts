@@ -7,6 +7,7 @@
 import { breakEven } from '../src/scout';
 import { isAlertStatus, playerKey } from '../src/names';
 import { requirePro } from './pro';
+import { bump } from './stats';
 import { b64url, bearer, HttpError, json, readJson, sha256, str, timingSafeEqual, type Deps, type Env } from './util';
 
 const PUSH_HOSTS = ['fcm.googleapis.com', 'push.services.mozilla.com', 'notify.windows.com', 'push.apple.com'];
@@ -57,12 +58,14 @@ export async function subscribe(request: Request, env: Env, deps: Deps) {
   const id = await sha256(endpoint);
   const now = deps.now();
   const picks = b.picks === false ? 0 : 1;
+  const isNew = !(await env.DB.prepare('SELECT 1 AS x FROM push_subs WHERE id = ?').bind(id).first());
   await env.DB.prepare(
     `INSERT INTO push_subs (id, endpoint, auth_hash, customer, picks, created_at, seen_at, fails, pro_until) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?)
      ON CONFLICT(id) DO UPDATE SET auth_hash = excluded.auth_hash, customer = excluded.customer, picks = excluded.picks, seen_at = excluded.seen_at, fails = 0, pro_until = excluded.pro_until`
   )
     .bind(id, endpoint, await sha256(auth), customer, picks, now, now, proUntil)
     .run();
+  if (isNew) await bump(env, now, 'alerts_on');
   const follows = await env.DB.prepare('SELECT pick_id FROM push_follows WHERE sub_id = ?').bind(id).all<{ pick_id: string }>();
   return json({ ok: true, picks: !!picks, following: follows.results.map((r) => r.pick_id) });
 }

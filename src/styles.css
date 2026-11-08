@@ -687,3 +687,17 @@ body.overlay-mode { background: transparent !important; }
 .propeek { position: relative; border-radius: 14px; overflow: hidden; }
 .propeek-inner { filter: blur(6px); pointer-events: none; user-select: none; max-height: 340px; overflow: hidden; }
 .propeek-cta { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; text-align: center; background: color-mix(in srgb, var(--bg) 55%, transparent); }
+
+/* ---- owner stats ---- */
+.stats-page > .card, .stats-page > .stats, .stats-page > .seg { margin-bottom: 12px; }
+.daybars { display: flex; align-items: flex-end; gap: 3px; height: 120px; margin-top: 10px; }
+.daybar { flex: 1 1 0; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; gap: 2px; }
+.daybar i { display: block; width: 100%; background: var(--gold); border-radius: 3px 3px 0 0; min-height: 2px; }
+.daybar small { font-size: 9px; color: var(--ink-2); white-space: nowrap; overflow: hidden; max-width: 100%; }
+.statstable { width: 100%; margin-top: 8px; }
+.statstable td:first-child { overflow-wrap: anywhere; }
+.linkmaker input { font: inherit; padding: 9px 11px; border-radius: 10px; border: 1px solid var(--line, #ccc); background: var(--surface); color: var(--ink); width: 100%; box-sizing: border-box; margin: 8px 0; }
+.statstable { table-layout: fixed; min-width: 0 !important; }
+.statstable th, .statstable td { white-space: normal !important; }
+.statstable th:first-child, .statstable td:first-child { width: 60%; text-align: left; }
+.daybar { max-width: 28px; }

@@ -244,6 +244,9 @@ function OwnerBox({ owner, setOwner }: { owner: boolean; setOwner: (b: boolean) 
           <b>You're signed in as the owner.</b> To post a pick, tap a price on the Scores tab (or add a prop from a game's details) and choose "Post to my
           record". Picks lock at kickoff and can't be edited afterward, so double-check the price first.
         </p>
+        <a className="btn sm" href="#stats">
+          📊 Visitor stats
+        </a>{' '}
         <button
           className="btn ghost sm"
           onClick={() => {

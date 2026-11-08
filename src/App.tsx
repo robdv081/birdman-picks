@@ -26,15 +26,17 @@ import { refreshPush, syncWatch, usePush, watchList } from './push';
 import Compete, { PlayerPage } from './components/Compete';
 import Overlay from './components/Overlay';
 import TiltCard from './components/TiltCard';
+import Stats from './components/Stats';
 import { scoutEnabled } from './server';
 
-type Route = { view: 'compete' } | { view: 'player'; name: string } | { view: 'overlay'; name: string } | { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
+type Route = { view: 'stats' } | { view: 'compete' } | { view: 'player'; name: string } | { view: 'overlay'; name: string } | { view: 'scout' } | { view: 'today' } | { view: 'scores'; league: LeagueKey } | { view: 'props' } | { view: 'bets' } | { view: 'fantasy' } | { view: 'record' } | { view: 'pickem' };
 
 function parseHash(): Route {
   const h = location.hash.replace('#', '');
   if (h === '' || h === 'today') return { view: 'today' };
   if (h === 'scout') return { view: 'scout' };
   if (h === 'compete') return { view: 'compete' };
+  if (h === 'stats') return { view: 'stats' };
   const named = h.match(/^(player|overlay)\/([A-Za-z0-9_]{3,20})$/);
   if (named) return { view: named[1] as 'player' | 'overlay', name: named[2] };
   if (h === 'props') return { view: 'props' };
@@ -226,6 +228,7 @@ export default function App() {
         {route.view === 'record' && <Record />}
         {route.view === 'pickem' && <Pickem />}
         {route.view === 'compete' && <Compete />}
+        {route.view === 'stats' && <Stats />}
         {route.view === 'player' && <PlayerPage name={route.name} />}
       </main>
 
